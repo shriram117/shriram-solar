@@ -181,7 +181,7 @@ export default function Home() {
               className="flex items-center gap-2 transition hover:text-yellow-400"
             >
               <Phone size={14} />
-              +91 98765 43210
+              +91 8740881142
             </a>
 
             <a
