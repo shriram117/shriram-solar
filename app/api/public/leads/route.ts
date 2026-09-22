@@ -1,9 +1,138 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db/db";
 
+const ALLOWED_SERVICES = new Set([
+  "INSTALLATION",
+  "PANEL_CLEANING",
+  "REPAIR",
+  "AMC",
+  "INSPECTION",
+]);
+
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 5;
+
+type RateLimitEntry = {
+  count: number;
+  resetAt: number;
+};
+
+const rateLimitStore = new Map<string, RateLimitEntry>();
+
+function getClientIp(request: NextRequest) {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0].trim();
+  }
+
+  return request.headers.get("x-real-ip") || "unknown";
+}
+
+function cleanupRateLimitStore(now: number) {
+  for (const [key, value] of rateLimitStore.entries()) {
+    if (value.resetAt <= now) {
+      rateLimitStore.delete(key);
+    }
+  }
+}
+
+function isRateLimited(ip: string) {
+  const now = Date.now();
+
+  cleanupRateLimitStore(now);
+
+  const existing = rateLimitStore.get(ip);
+
+  if (!existing || existing.resetAt <= now) {
+    rateLimitStore.set(ip, {
+      count: 1,
+      resetAt: now + RATE_LIMIT_WINDOW_MS,
+    });
+
+    return false;
+  }
+
+  if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return true;
+  }
+
+  existing.count += 1;
+
+  return false;
+}
+
+function cleanText(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim();
+}
+
+function isValidEmail(email: string) {
+  if (!email) {
+    return true;
+  }
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // ---------------------------------------------------------
+    // 1. BASIC REQUEST VALIDATION
+    // ---------------------------------------------------------
+
+    const contentType = request.headers.get("content-type") || "";
+
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid request format.",
+        },
+        { status: 415 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 2. RATE LIMIT
+    // ---------------------------------------------------------
+
+    const clientIp = getClientIp(request);
+
+    if (isRateLimited(clientIp)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Too many inquiries from this connection. Please try again later.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": "600",
+          },
+        }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 3. READ BODY
+    // ---------------------------------------------------------
+
     const body = await request.json();
+
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid request data.",
+        },
+        { status: 400 }
+      );
+    }
 
     const {
       name,
@@ -12,9 +141,24 @@ export async function POST(request: NextRequest) {
       city,
       service,
       message,
-    } = body;
+    } = body as Record<string, unknown>;
 
-    if (!name || !mobile || !city || !service) {
+    // ---------------------------------------------------------
+    // 4. CLEAN INPUT
+    // ---------------------------------------------------------
+
+    const cleanName = cleanText(name);
+    const cleanMobile = cleanText(mobile);
+    const cleanEmail = cleanText(email);
+    const cleanCity = cleanText(city);
+    const cleanService = cleanText(service).toUpperCase();
+    const cleanMessage = cleanText(message);
+
+    // ---------------------------------------------------------
+    // 5. REQUIRED FIELD VALIDATION
+    // ---------------------------------------------------------
+
+    if (!cleanName || !cleanMobile || !cleanCity || !cleanService) {
       return NextResponse.json(
         {
           success: false,
@@ -24,12 +168,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const cleanName = String(name).trim();
-    const cleanMobile = String(mobile).trim();
-    const cleanEmail = email ? String(email).trim() : null;
-    const cleanCity = String(city).trim();
-    const cleanService = String(service).trim();
-    const cleanMessage = message ? String(message).trim() : null;
+    // ---------------------------------------------------------
+    // 6. LENGTH VALIDATION
+    // ---------------------------------------------------------
+
+    if (cleanName.length > 100) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Name is too long.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (cleanCity.length > 100) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "City / area is too long.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (cleanMessage.length > 2000) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Message is too long. Maximum 2000 characters allowed.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (cleanEmail.length > 150) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Email address is too long.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 7. MOBILE VALIDATION
+    // ---------------------------------------------------------
 
     if (!/^[0-9]{10}$/.test(cleanMobile)) {
       return NextResponse.json(
@@ -41,7 +226,74 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const leadCode = `WEB-${Date.now()}`;
+    // ---------------------------------------------------------
+    // 8. EMAIL VALIDATION
+    // ---------------------------------------------------------
+
+    if (!isValidEmail(cleanEmail)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Please enter a valid email address.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 9. SERVICE VALIDATION
+    // ---------------------------------------------------------
+
+    if (!ALLOWED_SERVICES.has(cleanService)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid service selected.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 10. DUPLICATE RECENT LEAD PROTECTION
+    // ---------------------------------------------------------
+
+    const duplicateCheck = await pool.query(
+      `
+      SELECT id, lead_code
+      FROM leads
+      WHERE mobile = $1
+        AND source = 'WEBSITE'
+        AND created_at >= CURRENT_TIMESTAMP - INTERVAL '10 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [cleanMobile]
+    );
+
+    if (duplicateCheck.rows.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "We already received an inquiry from this mobile number. Our team will contact you shortly.",
+          lead: duplicateCheck.rows[0],
+        },
+        { status: 409 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 11. GENERATE LEAD CODE
+    // ---------------------------------------------------------
+
+    const leadCode = `WEB-${Date.now()}-${Math.floor(
+      Math.random() * 1000
+    )}`;
+
+    // ---------------------------------------------------------
+    // 12. INSERT LEAD
+    // ---------------------------------------------------------
 
     const result = await pool.query(
       `
@@ -81,11 +333,11 @@ export async function POST(request: NextRequest) {
         leadCode,
         cleanName,
         cleanMobile,
-        cleanEmail,
+        cleanEmail || null,
         cleanCity,
         null,
         cleanService,
-        cleanMessage,
+        cleanMessage || null,
         null,
         "WEBSITE",
         "NEW",
@@ -93,6 +345,10 @@ export async function POST(request: NextRequest) {
         "Website inquiry",
       ]
     );
+
+    // ---------------------------------------------------------
+    // 13. SUCCESS RESPONSE
+    // ---------------------------------------------------------
 
     return NextResponse.json(
       {
