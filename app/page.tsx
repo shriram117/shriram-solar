@@ -177,7 +177,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-5">
             <a
-              href="tel:+919876543210"
+              href="tel:+918740881142"
               className="flex items-center gap-2 transition hover:text-yellow-400"
             >
               <Phone size={14} />
@@ -932,7 +932,7 @@ export default function Home() {
         <div className="mx-auto max-w-7xl px-4">
           <div className="grid gap-5 md:grid-cols-3">
             <a
-              href="tel:+919876543210"
+              href="tel:+918740881142"
               className="rounded-2xl border border-slate-200 p-6 transition hover:-translate-y-1 hover:shadow-xl"
             >
               <Phone className="text-green-600" />
@@ -945,7 +945,7 @@ export default function Home() {
             </a>
 
             <a
-              href="mailto:info@shriramsolar.in"
+              href="mailto:shriram1157@gmail.com"
               className="rounded-2xl border border-slate-200 p-6 transition hover:-translate-y-1 hover:shadow-xl"
             >
               <Mail className="text-green-600" />
@@ -953,7 +953,7 @@ export default function Home() {
               <h3 className="mt-4 font-bold">Email Us</h3>
 
               <p className="mt-1 text-sm text-slate-500">
-                info@shriramsolar.in
+                shriram1157@gmail.com
               </p>
             </a>
 
@@ -1015,19 +1015,19 @@ export default function Home() {
 
               <div className="mt-4 space-y-3 text-sm text-slate-400">
                 <a
-                  href="tel:+919876543210"
+                  href="tel:+918740881142"
                   className="flex items-center gap-2"
                 >
                   <Phone size={16} />
-                  +91 98765 43210
+                  +91 8740881142
                 </a>
 
                 <a
-                  href="mailto:info@shriramsolar.in"
+                  href="mailto:shriram1157@gmail.com"
                   className="flex items-center gap-2"
                 >
                   <Mail size={16} />
-                  info@shriramsolar.in
+                  shriram1157@gmail.com
                 </a>
 
                 <div className="flex items-center gap-2">
