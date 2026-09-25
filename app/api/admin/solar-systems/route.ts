@@ -1,102 +1,88 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { pool } from "@/lib/db/db";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { pool } from "@/lib/db/db";
 
-const solarSystemSchema = z.object({
-  customerId: z.coerce.number().int().positive(),
+const ALLOWED_NET_METERING = [
+  "PENDING",
+  "APPLIED",
+  "APPROVED",
+  "INSTALLED",
+  "NOT_REQUIRED",
+];
 
-  systemCapacityKw: z.coerce.number().positive(),
+const ALLOWED_SUBSIDY = [
+  "NOT_APPLIED",
+  "APPLIED",
+  "APPROVED",
+  "RECEIVED",
+  "NOT_ELIGIBLE",
+];
 
-  panelBrand: z.string().optional().nullable(),
-  panelModel: z.string().optional().nullable(),
-  panelQuantity: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .nullable(),
+const ALLOWED_SYSTEM_STATUS = [
+  "ACTIVE",
+  "INACTIVE",
+  "UNDER_INSTALLATION",
+  "MAINTENANCE",
+];
 
-  inverterBrand: z.string().optional().nullable(),
-  inverterModel: z.string().optional().nullable(),
-  inverterCapacityKw: z.coerce
-    .number()
-    .positive()
-    .optional()
-    .nullable(),
-
-  installationDate: z.string().optional().nullable(),
-
-  installerTechnicianId: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .nullable(),
-
-  panelWarrantyYears: z.coerce
-    .number()
-    .nonnegative()
-    .optional()
-    .nullable(),
-
-  inverterWarrantyYears: z.coerce
-    .number()
-    .nonnegative()
-    .optional()
-    .nullable(),
-
-  netMeteringStatus: z.enum([
-    "PENDING",
-    "APPLIED",
-    "APPROVED",
-    "INSTALLED",
-    "NOT_REQUIRED",
-  ]),
-
-  subsidyStatus: z.enum([
-    "NOT_APPLIED",
-    "APPLIED",
-    "APPROVED",
-    "RECEIVED",
-    "NOT_ELIGIBLE",
-  ]),
-
-  systemStatus: z.enum([
-    "ACTIVE",
-    "INACTIVE",
-    "UNDER_MAINTENANCE",
-    "DECOMMISSIONED",
-  ]),
-
-  notes: z.string().optional().nullable(),
-});
-
-function generateSystemCode(id: string | number) {
-  return `SYS-${String(id).padStart(6, "0")}`;
+function cleanText(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value.trim();
 }
 
-/*
-|--------------------------------------------------------------------------
-| GET /api/admin/solar-systems
-|--------------------------------------------------------------------------
-*/
-export async function GET(request: NextRequest) {
-  const { user, response } = await requireAuth();
-
-  if (!user) {
-    return response;
+function toNumber(value: unknown) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
   }
 
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : null;
+}
+
+function isValidDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+// ============================================================
+// GET - Solar Systems List
+// ============================================================
+
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
+    const { response } = await requireAuth();
+
+    if (response) {
+      return response;
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+
+    const search = cleanText(
+      searchParams.get("search")
+    );
 
     const customerId = searchParams.get("customerId");
-    const status = searchParams.get("status");
-    const search = searchParams.get("search");
+
+    const status = cleanText(
+      searchParams.get("status")
+    ).toUpperCase();
 
     const conditions: string[] = [];
     const values: unknown[] = [];
+
+    if (search) {
+      values.push(`%${search}%`);
+
+      conditions.push(`
+        (
+          ss.system_code ILIKE $${values.length}
+          OR c.customer_name ILIKE $${values.length}
+          OR c.customer_code ILIKE $${values.length}
+          OR c.mobile ILIKE $${values.length}
+        )
+      `);
+    }
 
     if (customerId) {
       const customerIdNumber = Number(customerId);
@@ -115,26 +101,28 @@ export async function GET(request: NextRequest) {
       }
 
       values.push(customerIdNumber);
-      conditions.push(`ss.customer_id = $${values.length}`);
+
+      conditions.push(
+        `ss.customer_id = $${values.length}`
+      );
     }
 
     if (status) {
+      if (!ALLOWED_SYSTEM_STATUS.includes(status)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Invalid system status.",
+          },
+          { status: 400 }
+        );
+      }
+
       values.push(status);
-      conditions.push(`ss.system_status = $${values.length}`);
-    }
 
-    if (search) {
-      values.push(`%${search}%`);
-
-      conditions.push(`
-        (
-          ss.system_code ILIKE $${values.length}
-          OR c.customer_name ILIKE $${values.length}
-          OR c.customer_code ILIKE $${values.length}
-          OR ss.panel_brand ILIKE $${values.length}
-          OR ss.inverter_brand ILIKE $${values.length}
-        )
-      `);
+      conditions.push(
+        `ss.system_status = $${values.length}`
+      );
     }
 
     const whereClause =
@@ -151,7 +139,7 @@ export async function GET(request: NextRequest) {
 
         c.customer_code,
         c.customer_name,
-        c.mobile,
+        c.mobile AS customer_mobile,
 
         ss.system_capacity_kw,
 
@@ -168,6 +156,7 @@ export async function GET(request: NextRequest) {
         ss.installer_technician_id,
         t.technician_code,
         t.technician_name,
+        t.mobile AS technician_mobile,
 
         ss.panel_warranty_years,
         ss.inverter_warranty_years,
@@ -177,7 +166,6 @@ export async function GET(request: NextRequest) {
         ss.system_status,
 
         ss.notes,
-
         ss.created_at,
         ss.updated_at
 
@@ -191,7 +179,7 @@ export async function GET(request: NextRequest) {
 
       ${whereClause}
 
-      ORDER BY ss.created_at DESC
+      ORDER BY ss.id DESC
       `,
       values
     );
@@ -199,59 +187,319 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: result.rows,
-      count: result.rows.length,
     });
   } catch (error) {
-    console.error("GET SOLAR SYSTEMS ERROR:", error);
+    console.error(
+      "Solar systems GET error:",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to fetch solar systems.",
+        message: "Unable to load solar systems.",
       },
       { status: 500 }
     );
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| POST /api/admin/solar-systems
-|--------------------------------------------------------------------------
-*/
-export async function POST(request: NextRequest) {
-  const { user, response } = await requireAuth();
+// ============================================================
+// POST - Create Solar System
+// ============================================================
 
-  if (!user) {
-    return response;
-  }
+export async function POST(request: NextRequest) {
+  const client = await pool.connect();
 
   try {
-    const body = await request.json();
+    const { user, response } = await requireAuth();
 
-    const parsed = solarSystemSchema.safeParse(body);
+    if (response) {
+      return response;
+    }
 
-    if (!parsed.success) {
+    const contentType =
+      request.headers.get("content-type") || "";
+
+    if (
+      !contentType
+        .toLowerCase()
+        .includes("application/json")
+    ) {
       return NextResponse.json(
         {
           success: false,
-          message: "Invalid solar system data.",
-          errors: parsed.error.flatten(),
+          message: "Invalid request format.",
+        },
+        { status: 415 }
+      );
+    }
+
+    const body = await request.json();
+
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid request data.",
         },
         { status: 400 }
       );
     }
 
-    const data = parsed.data;
+    const customerId = Number(body.customer_id);
 
-    const customerResult = await pool.query(
-      `
-      SELECT id
-      FROM customers
-      WHERE id = $1
-      `,
-      [data.customerId]
+    if (
+      !Number.isInteger(customerId) ||
+      customerId <= 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Valid customer is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const systemCapacityKw = toNumber(
+      body.system_capacity_kw
     );
+
+    if (
+      systemCapacityKw === null ||
+      systemCapacityKw <= 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "System capacity must be greater than zero.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const panelBrand = cleanText(
+      body.panel_brand
+    );
+
+    const panelModel = cleanText(
+      body.panel_model
+    );
+
+    const panelQuantity =
+      body.panel_quantity === "" ||
+      body.panel_quantity === null ||
+      body.panel_quantity === undefined
+        ? null
+        : Number(body.panel_quantity);
+
+    if (
+      panelQuantity !== null &&
+      (!Number.isInteger(panelQuantity) ||
+        panelQuantity < 0)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Panel quantity must be a valid non-negative number.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const inverterBrand = cleanText(
+      body.inverter_brand
+    );
+
+    const inverterModel = cleanText(
+      body.inverter_model
+    );
+
+    const inverterCapacityKw = toNumber(
+      body.inverter_capacity_kw
+    );
+
+    if (
+      inverterCapacityKw !== null &&
+      inverterCapacityKw <= 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Inverter capacity must be greater than zero.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const installationDate = cleanText(
+      body.installation_date
+    );
+
+    if (
+      installationDate &&
+      !isValidDate(installationDate)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid installation date.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const installerTechnicianId =
+      body.installer_technician_id === "" ||
+      body.installer_technician_id === null ||
+      body.installer_technician_id === undefined
+        ? null
+        : Number(body.installer_technician_id);
+
+    if (
+      installerTechnicianId !== null &&
+      (!Number.isInteger(
+        installerTechnicianId
+      ) ||
+        installerTechnicianId <= 0)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Invalid installer technician.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const panelWarrantyYears = toNumber(
+      body.panel_warranty_years
+    );
+
+    if (
+      panelWarrantyYears !== null &&
+      panelWarrantyYears < 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Panel warranty cannot be negative.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const inverterWarrantyYears = toNumber(
+      body.inverter_warranty_years
+    );
+
+    if (
+      inverterWarrantyYears !== null &&
+      inverterWarrantyYears < 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Inverter warranty cannot be negative.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const netMeteringStatus =
+      cleanText(
+        body.net_metering_status
+      ).toUpperCase() || "PENDING";
+
+    if (
+      !ALLOWED_NET_METERING.includes(
+        netMeteringStatus
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Invalid net metering status.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const subsidyStatus =
+      cleanText(
+        body.subsidy_status
+      ).toUpperCase() || "NOT_APPLIED";
+
+    if (
+      !ALLOWED_SUBSIDY.includes(
+        subsidyStatus
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Invalid subsidy status.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const systemStatus =
+      cleanText(
+        body.system_status
+      ).toUpperCase() || "ACTIVE";
+
+    if (
+      !ALLOWED_SYSTEM_STATUS.includes(
+        systemStatus
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Invalid system status.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const notes = cleanText(body.notes);
+
+    if (notes.length > 5000) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Notes cannot exceed 5000 characters.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ----------------------------------------------------------
+    // Verify Customer
+    // ----------------------------------------------------------
+
+    const customerResult =
+      await client.query(
+        `
+        SELECT id
+        FROM customers
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [customerId]
+      );
 
     if (customerResult.rows.length === 0) {
       return NextResponse.json(
@@ -263,99 +511,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (data.installerTechnicianId) {
-      const technicianResult = await pool.query(
-        `
-        SELECT id
-        FROM technicians
-        WHERE id = $1
-          AND status = 'ACTIVE'
-        `,
-        [data.installerTechnicianId]
-      );
+    // ----------------------------------------------------------
+    // Verify Technician
+    // ----------------------------------------------------------
 
-      if (technicianResult.rows.length === 0) {
+    if (installerTechnicianId !== null) {
+      const technicianResult =
+        await client.query(
+          `
+          SELECT id
+          FROM technicians
+          WHERE id = $1
+            AND status = 'ACTIVE'
+          LIMIT 1
+          `,
+          [installerTechnicianId]
+        );
+
+      if (
+        technicianResult.rows.length === 0
+      ) {
         return NextResponse.json(
           {
             success: false,
-            message: "Active technician not found.",
+            message:
+              "Installer technician not found or inactive.",
           },
           { status: 400 }
         );
       }
     }
 
-    const client = await pool.connect();
+    // ----------------------------------------------------------
+    // Transaction
+    // ----------------------------------------------------------
 
-    try {
-      await client.query("BEGIN");
+    await client.query("BEGIN");
 
-      const sequenceResult = await client.query(
-        `SELECT nextval('solar_systems_id_seq') AS id`
-      );
-
-      const id = sequenceResult.rows[0].id;
-
-      const systemCode = generateSystemCode(id);
-
-      const result = await client.query(
+    const insertResult =
+      await client.query(
         `
         INSERT INTO solar_systems (
-          id,
-          system_code,
-          customer_id,
-          system_capacity_kw,
-
-          panel_brand,
-          panel_model,
-          panel_quantity,
-
-          inverter_brand,
-          inverter_model,
-          inverter_capacity_kw,
-
-          installation_date,
-
-          installer_technician_id,
-
-          panel_warranty_years,
-          inverter_warranty_years,
-
-          net_metering_status,
-          subsidy_status,
-          system_status,
-
-          notes
-        )
-        VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-
-          $5,
-          $6,
-          $7,
-
-          $8,
-          $9,
-          $10,
-
-          $11,
-
-          $12,
-
-          $13,
-          $14,
-
-          $15,
-          $16,
-          $17,
-
-          $18
-        )
-        RETURNING
-          id,
           system_code,
           customer_id,
           system_capacity_kw,
@@ -375,61 +571,97 @@ export async function POST(request: NextRequest) {
           notes,
           created_at,
           updated_at
+        )
+        VALUES (
+          'TEMP',
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          $8,
+          $9,
+          $10,
+          $11,
+          $12,
+          $13,
+          $14,
+          $15,
+          $16,
+          CURRENT_TIMESTAMP,
+          CURRENT_TIMESTAMP
+        )
+        RETURNING id
         `,
         [
-          id,
-          systemCode,
-          data.customerId,
-          data.systemCapacityKw,
-
-          data.panelBrand || null,
-          data.panelModel || null,
-          data.panelQuantity ?? null,
-
-          data.inverterBrand || null,
-          data.inverterModel || null,
-          data.inverterCapacityKw ?? null,
-
-          data.installationDate || null,
-
-          data.installerTechnicianId ?? null,
-
-          data.panelWarrantyYears ?? null,
-          data.inverterWarrantyYears ?? null,
-
-          data.netMeteringStatus,
-          data.subsidyStatus,
-          data.systemStatus,
-
-          data.notes || null,
+          customerId,
+          systemCapacityKw,
+          panelBrand || null,
+          panelModel || null,
+          panelQuantity,
+          inverterBrand || null,
+          inverterModel || null,
+          inverterCapacityKw,
+          installationDate || null,
+          installerTechnicianId,
+          panelWarrantyYears,
+          inverterWarrantyYears,
+          netMeteringStatus,
+          subsidyStatus,
+          systemStatus,
+          notes || null,
         ]
       );
 
-      await client.query("COMMIT");
+    const id = insertResult.rows[0].id;
 
-      return NextResponse.json(
-        {
-          success: true,
-          message: "Solar system created successfully.",
-          data: result.rows[0],
-        },
-        { status: 201 }
+    const systemCode =
+      `SYS-${String(id).padStart(6, "0")}`;
+
+    const updateResult =
+      await client.query(
+        `
+        UPDATE solar_systems
+        SET
+          system_code = $1,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+        RETURNING *
+        `,
+        [systemCode, id]
       );
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+
+    await client.query("COMMIT");
+
+    return NextResponse.json(
+      {
+        success: true,
+        message:
+          "Solar system created successfully.",
+        data: updateResult.rows[0],
+        created_by: user?.userId,
+      },
+      { status: 201 }
+    );
   } catch (error) {
-    console.error("CREATE SOLAR SYSTEM ERROR:", error);
+    await client.query("ROLLBACK");
+
+    console.error(
+      "Solar system POST error:",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to create solar system.",
+        message:
+          "Unable to create solar system.",
       },
       { status: 500 }
     );
+  } finally {
+    client.release();
   }
 }

@@ -18,24 +18,30 @@ export async function GET(request: NextRequest) {
     const conditions: string[] = [];
     const values: string[] = [];
 
+    /*
+     * Search
+     */
     if (search) {
       values.push(`%${search}%`);
 
       conditions.push(`
         (
-          technician_code ILIKE $${values.length}
-          OR technician_name ILIKE $${values.length}
-          OR mobile ILIKE $${values.length}
-          OR email ILIKE $${values.length}
+          t.technician_code ILIKE $${values.length}
+          OR t.technician_name ILIKE $${values.length}
+          OR t.mobile ILIKE $${values.length}
+          OR t.email ILIKE $${values.length}
         )
       `);
     }
 
+    /*
+     * Status filter
+     */
     if (status) {
       values.push(status);
 
       conditions.push(`
-        status = $${values.length}
+        t.status = $${values.length}
       `);
     }
 
@@ -44,6 +50,9 @@ export async function GET(request: NextRequest) {
         ? `WHERE ${conditions.join(" AND ")}`
         : "";
 
+    /*
+     * Get technicians
+     */
     const query = `
       SELECT
         t.id,
@@ -53,6 +62,7 @@ export async function GET(request: NextRequest) {
         t.email,
         t.address,
         t.specialization,
+        t.experience_years,
         t.joining_date,
         t.status,
         t.created_at,
@@ -75,6 +85,7 @@ export async function GET(request: NextRequest) {
         t.email,
         t.address,
         t.specialization,
+        t.experience_years,
         t.joining_date,
         t.status,
         t.created_at,
@@ -119,10 +130,14 @@ export async function POST(request: NextRequest) {
       email,
       address,
       specialization,
+      experienceYears,
       joiningDate,
       status = "ACTIVE",
     } = body;
 
+    /*
+     * Technician name validation
+     */
     if (!technicianName?.trim()) {
       return NextResponse.json(
         {
@@ -133,6 +148,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /*
+     * Mobile validation
+     */
     if (!mobile?.trim()) {
       return NextResponse.json(
         {
@@ -143,6 +161,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /*
+     * Status validation
+     */
     if (!["ACTIVE", "INACTIVE"].includes(status)) {
       return NextResponse.json(
         {
@@ -153,6 +174,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /*
+     * Experience validation
+     */
+    let experienceYearsValue: number | null = null;
+
+    if (
+      experienceYears !== null &&
+      experienceYears !== undefined &&
+      experienceYears !== ""
+    ) {
+      const parsedExperience = Number(experienceYears);
+
+      if (
+        !Number.isFinite(parsedExperience) ||
+        !Number.isInteger(parsedExperience) ||
+        parsedExperience < 0
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Experience must be a valid whole number of years.",
+          },
+          { status: 400 }
+        );
+      }
+
+      experienceYearsValue = parsedExperience;
+    }
+
+    /*
+     * Duplicate active technician check
+     */
     const duplicateCheck = await pool.query(
       `
         SELECT id
@@ -168,17 +221,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          message: "An active technician with this mobile number already exists.",
+          message:
+            "An active technician with this mobile number already exists.",
         },
         { status: 409 }
       );
     }
 
+    /*
+     * Transaction
+     */
     const client = await pool.connect();
 
     try {
       await client.query("BEGIN");
 
+      /*
+       * Generate ID
+       */
       const sequenceResult = await client.query(
         `
           SELECT nextval('technicians_id_seq') AS id
@@ -187,8 +247,14 @@ export async function POST(request: NextRequest) {
 
       const id = Number(sequenceResult.rows[0].id);
 
+      /*
+       * Generate technician code
+       */
       const technicianCode = `TECH-${String(id).padStart(6, "0")}`;
 
+      /*
+       * Insert technician
+       */
       const result = await client.query(
         `
           INSERT INTO technicians (
@@ -199,6 +265,7 @@ export async function POST(request: NextRequest) {
             email,
             address,
             specialization,
+            experience_years,
             joining_date,
             status
           )
@@ -211,7 +278,8 @@ export async function POST(request: NextRequest) {
             $6,
             $7,
             $8,
-            $9
+            $9,
+            $10
           )
           RETURNING
             id,
@@ -221,6 +289,7 @@ export async function POST(request: NextRequest) {
             email,
             address,
             specialization,
+            experience_years,
             joining_date,
             status,
             created_at,
@@ -234,6 +303,7 @@ export async function POST(request: NextRequest) {
           email?.trim() || null,
           address?.trim() || null,
           specialization?.trim() || null,
+          experienceYearsValue,
           joiningDate || null,
           status,
         ]

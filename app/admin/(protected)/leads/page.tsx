@@ -7,17 +7,11 @@ import {
   Search,
   RefreshCw,
   Eye,
-  Edit,
-  X,
-  User,
+  Pencil,
   Phone,
-  Mail,
-  MapPin,
-  Calendar,
-  Wrench,
-  FileText,
-  Users,
-  Loader2,
+  MessageCircle,
+  X,
+  Save,
   UserPlus,
 } from "lucide-react";
 
@@ -26,24 +20,21 @@ type Lead = {
   lead_code: string;
   customer_name: string;
   mobile: string;
-  email?: string | null;
-  city?: string | null;
-  district?: string | null;
+  email: string | null;
+  city: string | null;
+  district: string | null;
   service_type: string;
-  requirement?: string | null;
-  estimated_capacity?: number | string | null;
-  source?: string | null;
+  requirement: string | null;
+  estimated_capacity: string | number | null;
+  source: string;
   status: string;
-  assigned_to?: number | string | null;
-  assigned_user_name?: string | null;
-  converted_customer_id?: number | string | null;
-  follow_up_date?: string | null;
-  notes?: string | null;
+  follow_up_date: string | null;
+  notes: string | null;
   created_at: string;
-  updated_at?: string | null;
 };
 
 const STATUS_OPTIONS = [
+  "ALL",
   "NEW",
   "CONTACTED",
   "FOLLOW_UP",
@@ -53,144 +44,55 @@ const STATUS_OPTIONS = [
   "CANCELLED",
 ];
 
-function getStatusClass(status: string) {
-  switch (status) {
-    case "NEW":
-      return "bg-blue-50 text-blue-700 border-blue-200";
-
-    case "CONTACTED":
-      return "bg-purple-50 text-purple-700 border-purple-200";
-
-    case "FOLLOW_UP":
-      return "bg-yellow-50 text-yellow-700 border-yellow-200";
-
-    case "QUOTED":
-      return "bg-orange-50 text-orange-700 border-orange-200";
-
-    case "CONVERTED":
-      return "bg-green-50 text-green-700 border-green-200";
-
-    case "LOST":
-      return "bg-red-50 text-red-700 border-red-200";
-
-    case "CANCELLED":
-      return "bg-gray-50 text-gray-700 border-gray-200";
-
-    default:
-      return "bg-gray-50 text-gray-700 border-gray-200";
-  }
-}
-
-function formatStatus(status: string) {
-  return status.replaceAll("_", " ");
-}
-
-function formatDate(date?: string | null) {
-  if (!date) return "-";
-
-  /*
-   * PostgreSQL DATE:
-   * YYYY-MM-DD
-   *
-   * Keep it as-is to avoid timezone conversion.
-   */
-  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const [year, month, day] = date.split("-");
-    return `${day}/${month}/${year}`;
-  }
-
-  /*
-   * ISO timestamp
-   */
-  const parsed = new Date(date);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return date;
-  }
-
-  return parsed.toLocaleDateString("en-GB");
-}
-
-function formatDateTime(date?: string | null) {
-  if (!date) return "-";
-
-  const parsed = new Date(date);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return date;
-  }
-
-  return parsed.toLocaleString("en-IN");
-}
-
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [status, setStatus] = useState("ALL");
 
+  // Add / Edit Lead
   const [showAddLead, setShowAddLead] = useState(false);
+  const [editLead, setEditLead] = useState<Lead | null>(null);
 
-  const [selectedLead, setSelectedLead] =
-    useState<Lead | null>(null);
+  // View / Follow-up
+  const [viewLead, setViewLead] = useState<Lead | null>(null);
 
-  const [showViewLead, setShowViewLead] =
-    useState(false);
+  const [followUpStatus, setFollowUpStatus] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
+  const [followUpNotes, setFollowUpNotes] = useState("");
 
-  const [editLead, setEditLead] =
-    useState<Lead | null>(null);
+  const [savingFollowUp, setSavingFollowUp] = useState(false);
 
-  const [updatingStatusId, setUpdatingStatusId] =
-    useState<number | null>(null);
+  const [followUpMessage, setFollowUpMessage] = useState("");
+  const [followUpError, setFollowUpError] = useState("");
 
-  const [convertingLeadId, setConvertingLeadId] =
-    useState<number | null>(null);
-
-  /*
-   * Load all leads
-   */
   async function loadLeads() {
     try {
       setLoading(true);
+      setError("");
 
-      const response = await fetch(
-        "/api/admin/leads",
-        {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        }
-      );
+      const response = await fetch("/api/admin/leads", {
+        cache: "no-store",
+      });
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(
-          data?.message ||
-            "Failed to load leads"
+          data.message || "Failed to load leads."
         );
       }
 
-      /*
-       * Current API response:
-       *
-       * {
-       *   success: true,
-       *   data: [...]
-       * }
-       *
-       * Also support data.leads for compatibility.
-       */
-      setLeads(
-        data.data ||
-          data.leads ||
-          []
-      );
-    } catch (error) {
-      console.error(
-        "Load leads error:",
-        error
+      setLeads(data.data || []);
+    } catch (err) {
+      console.error("Load leads error:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load leads."
       );
     } finally {
       setLoading(false);
@@ -201,12 +103,8 @@ export default function LeadsPage() {
     loadLeads();
   }, []);
 
-  /*
-   * Search + status filtering
-   */
   const filteredLeads = useMemo(() => {
-    const searchText =
-      search.trim().toLowerCase();
+    const searchText = search.trim().toLowerCase();
 
     return leads.filter((lead) => {
       const matchesSearch =
@@ -220,1279 +118,1006 @@ export default function LeadsPage() {
         lead.lead_code
           ?.toLowerCase()
           .includes(searchText) ||
-        lead.service_type
+        lead.city
           ?.toLowerCase()
+          .includes(searchText) ||
+        lead.requirement
+          ?.toLowerCase()
+          .includes(searchText) ||
+        String(lead.estimated_capacity ?? "")
+          .toLowerCase()
           .includes(searchText);
 
       const matchesStatus =
-        statusFilter === "ALL" ||
-        lead.status === statusFilter;
+        status === "ALL" || lead.status === status;
 
-      return (
-        matchesSearch &&
-        matchesStatus
-      );
+      return matchesSearch && matchesStatus;
     });
-  }, [
-    leads,
-    search,
-    statusFilter,
-  ]);
+  }, [leads, search, status]);
 
-  /*
-   * View lead
-   */
-  function handleViewLead(
-    lead: Lead
-  ) {
-    setSelectedLead(lead);
-    setShowViewLead(true);
+  // -----------------------------
+  // ADD LEAD
+  // -----------------------------
+  function openAddLead() {
+    setEditLead(null);
+    setShowAddLead(true);
   }
 
-  /*
-   * Close view
-   */
-  function closeViewLead() {
-    setShowViewLead(false);
-    setSelectedLead(null);
-  }
-
-  /*
-   * Edit lead
-   */
-  function handleEditLead(
-    lead: Lead
-  ) {
+  // -----------------------------
+  // EDIT LEAD
+  // -----------------------------
+  function openLeadEdit(lead: Lead) {
+    setShowAddLead(false);
     setEditLead(lead);
   }
 
-  /*
-   * Close edit
-   */
-  function closeEditLead() {
+  function closeLeadForm() {
+    setShowAddLead(false);
     setEditLead(null);
   }
 
-  /*
-   * Reload after Add/Edit
-   */
-  async function handleLeadSaved() {
-    await loadLeads();
+  function handleLeadSaved() {
+    closeLeadForm();
+    loadLeads();
   }
 
-  /*
-   * Change lead status
-   */
-  async function handleStatusChange(
-    lead: Lead,
-    newStatus: string
-  ) {
-    if (
-      lead.status === newStatus
-    ) {
+  // -----------------------------
+  // VIEW LEAD
+  // -----------------------------
+  function openLeadView(lead: Lead) {
+    setViewLead(lead);
+
+    setFollowUpStatus(lead.status);
+
+    setFollowUpDate(
+      lead.follow_up_date
+        ? lead.follow_up_date.substring(0, 10)
+        : ""
+    );
+
+    setFollowUpNotes(lead.notes || "");
+
+    setFollowUpMessage("");
+    setFollowUpError("");
+  }
+
+  function closeLeadView() {
+    if (savingFollowUp) {
       return;
     }
 
+    setViewLead(null);
+
+    setFollowUpMessage("");
+    setFollowUpError("");
+  }
+
+  // -----------------------------
+  // FOLLOW-UP SAVE
+  // -----------------------------
+  async function saveFollowUp() {
+    if (!viewLead) {
+      return;
+    }
+
+    setSavingFollowUp(true);
+    setFollowUpMessage("");
+    setFollowUpError("");
+
     try {
-      setUpdatingStatusId(
-        lead.id
+      const response = await fetch(
+        `/api/admin/leads/${viewLead.id}/follow-up`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: followUpStatus,
+            follow_up_date: followUpDate,
+            notes: followUpNotes,
+          }),
+        }
       );
 
-      const response =
-        await fetch(
-          `/api/admin/leads/${lead.id}/status`,
-          {
-            method: "PATCH",
-            credentials: "include",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              status: newStatus,
-            }),
-          }
-        );
+      const result = await response.json();
 
-      const data =
-        await response.json();
-
-      if (!response.ok) {
+      if (!response.ok || !result.success) {
         throw new Error(
-          data?.message ||
-            "Failed to update lead status"
+          result.message || "Unable to update lead."
         );
       }
 
-      /*
-       * Update grid immediately
-       */
-      setLeads(
-        (previousLeads) =>
-          previousLeads.map(
-            (item) =>
-              item.id === lead.id
-                ? {
-                    ...item,
-                    status:
-                      newStatus,
-                    updated_at:
-                      data?.data
-                        ?.updated_at ||
-                      item.updated_at,
-                  }
-                : item
-          )
+      setFollowUpMessage(
+        result.message || "Lead updated successfully."
       );
 
-      /*
-       * Update View modal if open
-       */
-      setSelectedLead(
-        (previous) =>
-          previous &&
-          previous.id === lead.id
-            ? {
-                ...previous,
-                status:
-                  newStatus,
-                updated_at:
-                  data?.data
-                    ?.updated_at ||
-                  previous.updated_at,
-              }
-            : previous
-      );
-    } catch (error) {
-      console.error(
-        "Update lead status error:",
-        error
+      setViewLead((current) =>
+        current
+          ? {
+              ...current,
+              status: result.data.status,
+              follow_up_date:
+                result.data.follow_up_date,
+              notes: result.data.notes,
+            }
+          : current
       );
 
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Failed to update lead status"
+      await loadLeads();
+    } catch (err) {
+      console.error("Save follow-up error:", err);
+
+      setFollowUpError(
+        err instanceof Error
+          ? err.message
+          : "Unable to update lead."
       );
     } finally {
-      setUpdatingStatusId(
-        null
-      );
+      setSavingFollowUp(false);
     }
   }
 
-  /*
-   * Convert Lead -> Customer
-   */
-  async function handleConvertLead(
-    lead: Lead
-  ) {
-    /*
-     * Already converted
-     */
-    if (
-      lead.converted_customer_id
-    ) {
-      alert(
-        "This lead has already been converted to a customer."
-      );
+  // -----------------------------
+  // CONVERT LEAD TO CUSTOMER
+  // -----------------------------
+  async function convertToCustomer() {
+    if (!viewLead) {
       return;
     }
 
-    /*
-     * These statuses cannot be converted
-     */
-    if (
-      lead.status === "LOST" ||
-      lead.status === "CANCELLED"
-    ) {
-      alert(
-        `Lead with status ${lead.status} cannot be converted to customer.`
-      );
+    if (viewLead.status === "CONVERTED") {
       return;
     }
 
-    /*
-     * Confirmation
-     */
-    const confirmed =
-      window.confirm(
-        `Convert this lead to a customer?\n\n` +
-          `Lead: ${lead.lead_code}\n` +
-          `Customer: ${lead.customer_name}\n` +
-          `Mobile: ${lead.mobile}`
-      );
+    const confirmed = window.confirm(
+      `Convert "${viewLead.customer_name}" to Customer?`
+    );
 
     if (!confirmed) {
       return;
     }
 
     try {
-      setConvertingLeadId(
-        lead.id
+      setSavingFollowUp(true);
+      setFollowUpMessage("");
+      setFollowUpError("");
+
+      const response = await fetch(
+        `/api/admin/leads/${viewLead.id}/convert`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
       );
 
-      const response =
-        await fetch(
-          `/api/admin/leads/${lead.id}/convert`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-          }
-        );
+      const result = await response.json();
 
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        /*
-         * Existing customer
-         */
-        if (
-          data?.existing_customer
-        ) {
-          throw new Error(
-            `${data.message}. Existing customer: ${data.existing_customer.customer_code}`
-          );
-        }
-
+      if (!response.ok || !result.success) {
         throw new Error(
-          data?.message ||
-            "Failed to convert lead to customer"
+          result.message ||
+            "Unable to convert lead to customer."
         );
       }
 
-      const customerCode =
-        data?.data
-          ?.customer
-          ?.customer_code;
-
-      /*
-       * Success message
-       */
-      alert(
-        customerCode
-          ? `Lead converted successfully.\n\nCustomer Code: ${customerCode}`
-          : "Lead converted successfully."
+      setFollowUpMessage(
+        result.message ||
+          "Lead converted to customer successfully."
       );
 
-      /*
-       * Close View modal
-       */
-      closeViewLead();
+      setViewLead((current) =>
+        current
+          ? {
+              ...current,
+              status: "CONVERTED",
+            }
+          : current
+      );
 
-      /*
-       * Reload leads
-       */
       await loadLeads();
     } catch (error) {
-      console.error(
-        "Convert lead error:",
-        error
-      );
+      console.error("Convert lead error:", error);
 
-      alert(
+      setFollowUpError(
         error instanceof Error
           ? error.message
-          : "Failed to convert lead to customer"
+          : "Unable to convert lead to customer."
       );
     } finally {
-      setConvertingLeadId(
-        null
-      );
+      setSavingFollowUp(false);
     }
   }
 
   return (
-    <div className="space-y-6">
-
-      {/* =====================================================
+    <div>
+      {/* =========================================
           HEADER
-      ====================================================== */}
-
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
+      ========================================= */}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
+          <h1 className="text-2xl font-bold text-slate-900">
             Leads
           </h1>
 
-          <p className="mt-1 text-sm text-gray-500">
-            Manage customer enquiries and sales leads
+          <p className="mt-1 text-sm text-slate-500">
+            Manage solar business enquiries and potential
+            customers.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() =>
-            setShowAddLead(true)
-          }
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
+          onClick={openAddLead}
+          className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
         >
           <Plus size={18} />
-
           Add Lead
         </button>
-
       </div>
 
-      {/* =====================================================
-          FILTER BAR
-      ====================================================== */}
-
-      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-
-        <div className="flex flex-col gap-3 lg:flex-row">
-
-          {/* SEARCH */}
-
+      {/* =========================================
+          FILTERS
+      ========================================= */}
+      <div className="mb-6 rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row">
+          {/* Search */}
           <div className="relative flex-1">
-
             <Search
               size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
             />
 
             <input
               type="text"
+              placeholder="Search customer, mobile, city or lead ID..."
               value={search}
               onChange={(e) =>
-                setSearch(
-                  e.target.value
-                )
+                setSearch(e.target.value)
               }
-              placeholder="Search by lead, customer, mobile or service..."
-              className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
             />
-
           </div>
 
-          {/* STATUS FILTER */}
-
+          {/* Status */}
           <select
-            value={statusFilter}
+            value={status}
             onChange={(e) =>
-              setStatusFilter(
-                e.target.value
-              )
+              setStatus(e.target.value)
             }
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-green-600"
           >
-            <option value="ALL">
-              All Status
-            </option>
-
-            {STATUS_OPTIONS.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {formatStatus(
-                    item
-                  )}
-                </option>
-              )
-            )}
+            {STATUS_OPTIONS.map((item) => (
+              <option key={item} value={item}>
+                {item === "ALL"
+                  ? "All Status"
+                  : formatStatus(item)}
+              </option>
+            ))}
           </select>
 
-          {/* REFRESH */}
-
+          {/* Refresh */}
           <button
             type="button"
             onClick={loadLeads}
             disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw
               size={17}
               className={
-                loading
-                  ? "animate-spin"
-                  : ""
+                loading ? "animate-spin" : ""
               }
             />
 
             Refresh
           </button>
-
         </div>
-
       </div>
 
-      {/* =====================================================
-          TABLE
-      ====================================================== */}
+      {/* =========================================
+          ERROR
+      ========================================= */}
+      {error && (
+        <div className="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-
+      {/* =========================================
+          LEADS TABLE
+      ========================================= */}
+      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
         <div className="overflow-x-auto">
-
-          <table className="min-w-full">
-
-            <thead>
-
-              <tr className="border-b border-gray-200 bg-gray-50">
-
-                <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <table className="w-full min-w-[1250px] text-left">
+            <thead className="border-b bg-slate-50">
+              <tr>
+                <th className="px-5 py-4 text-xs font-semibold uppercase text-slate-500">
                   Lead
                 </th>
 
-                <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-5 py-4 text-xs font-semibold uppercase text-slate-500">
                   Customer
                 </th>
 
-                <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-5 py-4 text-xs font-semibold uppercase text-slate-500">
                   Service
                 </th>
 
-                <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                  Capacity
+                <th className="px-5 py-4 text-xs font-semibold uppercase text-slate-500">
+                  Solar Details
                 </th>
 
-                <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-5 py-4 text-xs font-semibold uppercase text-slate-500">
                   Status
                 </th>
 
-                <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-5 py-4 text-xs font-semibold uppercase text-slate-500">
                   Follow Up
                 </th>
 
-                <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-5 py-4 text-right text-xs font-semibold uppercase text-slate-500">
                   Action
                 </th>
-
               </tr>
-
             </thead>
 
-            <tbody>
-
-              {/* LOADING */}
-
+            <tbody className="divide-y">
               {loading ? (
-
                 <tr>
-
                   <td
                     colSpan={7}
-                    className="px-5 py-12 text-center text-sm text-gray-500"
+                    className="px-5 py-12 text-center text-sm text-slate-500"
                   >
                     Loading leads...
                   </td>
-
                 </tr>
-
               ) : filteredLeads.length === 0 ? (
-
-                /* EMPTY */
-
                 <tr>
-
                   <td
                     colSpan={7}
                     className="px-5 py-12 text-center"
                   >
+                    <p className="text-sm font-medium text-slate-700">
+                      No leads found
+                    </p>
 
-                    <div className="flex flex-col items-center">
-
-                      <Users
-                        size={38}
-                        className="mb-3 text-gray-300"
-                      />
-
-                      <p className="text-sm font-medium text-gray-700">
-                        No leads found
-                      </p>
-
-                      <p className="mt-1 text-xs text-gray-500">
-                        Try changing your search or filters.
-                      </p>
-
-                    </div>
-
+                    <p className="mt-1 text-xs text-slate-500">
+                      Add your first solar enquiry to get
+                      started.
+                    </p>
                   </td>
-
                 </tr>
-
               ) : (
+                filteredLeads.map((lead) => (
+                  <tr
+                    key={lead.id}
+                    className="hover:bg-slate-50"
+                  >
+                    {/* Lead */}
+                    <td className="px-5 py-4">
+                      <p className="font-medium text-slate-900">
+                        {lead.lead_code}
+                      </p>
 
-                /* DATA */
+                      <p className="text-xs text-slate-500">
+                        {formatDate(lead.created_at)}
+                      </p>
+                    </td>
 
-                filteredLeads.map(
-                  (lead) => (
+                    {/* Customer */}
+                    <td className="px-5 py-4">
+                      <p className="font-medium text-slate-900">
+                        {lead.customer_name}
+                      </p>
 
-                    <tr
-                      key={lead.id}
-                      className="border-b border-gray-200 last:border-b-0 hover:bg-gray-50"
-                    >
+                      <p className="text-xs text-slate-500">
+                        {lead.mobile}
+                      </p>
 
-                      {/* LEAD */}
+                      {lead.city && (
+                        <p className="text-xs text-slate-400">
+                          {lead.city}
+                        </p>
+                      )}
+                    </td>
 
-                      <td className="px-5 py-4 align-top">
+                    {/* Service */}
+                    <td className="px-5 py-4 text-sm text-slate-700">
+                      {formatStatus(lead.service_type)}
+                    </td>
 
-                        <div className="text-sm font-semibold text-gray-900">
-                          {lead.lead_code}
-                        </div>
-
-                        <div className="mt-1 text-xs text-gray-500">
-                          {formatDate(
-                            lead.created_at
-                          )}
-                        </div>
-
-                      </td>
-
-                      {/* CUSTOMER */}
-
-                      <td className="px-5 py-4 align-top">
-
-                        <div className="text-sm font-medium text-gray-900">
-                          {lead.customer_name}
-                        </div>
-
-                        <div className="mt-1 text-xs text-gray-500">
-                          {lead.mobile}
-                        </div>
-
-                        {(lead.city ||
-                          lead.district) && (
-
-                          <div className="mt-1 text-xs text-gray-500">
-                            {[
-                              lead.city,
-                              lead.district,
-                            ]
-                              .filter(
-                                Boolean
-                              )
-                              .join(
-                                ", "
-                              )}
-                          </div>
-
-                        )}
-
-                      </td>
-
-                      {/* SERVICE */}
-
-                      <td className="px-5 py-4 align-top">
-
-                        <div className="text-sm text-gray-700">
-                          {lead.service_type}
-                        </div>
-
-                        <div className="mt-1 text-xs text-gray-500">
-                          {lead.source ||
-                            "-"}
-                        </div>
-
-                      </td>
-
-                      {/* CAPACITY */}
-
-                      <td className="px-5 py-4 align-top">
-
-                        <div className="text-sm text-gray-700">
-
-                          {lead.estimated_capacity !==
-                            null &&
-                          lead.estimated_capacity !==
-                            undefined &&
-                          lead.estimated_capacity !==
-                            ""
+                    {/* Solar Details */}
+                    <td className="px-5 py-4">
+                      <div className="space-y-1 text-sm">
+                        <p className="font-semibold text-slate-800">
+                          {lead.estimated_capacity
                             ? `${lead.estimated_capacity} kW`
-                            : "-"}
+                            : "Capacity: -"}
+                        </p>
 
-                        </div>
+                        <p className="text-xs text-slate-500">
+                          Property:{" "}
+                          {getPropertyType(lead.requirement) || "-"}
+                        </p>
 
-                      </td>
+                        <p className="text-xs text-slate-500">
+                          Bill:{" "}
+                          {getMonthlyBill(lead.requirement) || "-"}
+                        </p>
+                      </div>
+                    </td>
 
-                      {/* STATUS */}
+                    {/* Status */}
+                    <td className="px-5 py-4">
+                      <StatusBadge
+                        status={lead.status}
+                      />
+                    </td>
 
-                      <td className="px-5 py-4 align-top">
-
-                        <div className="relative inline-block">
-
-                          <select
-                            value={
-                              lead.status
-                            }
-                            disabled={
-                              updatingStatusId ===
-                              lead.id
-                            }
-                            onChange={(e) =>
-                              handleStatusChange(
-                                lead,
-                                e.target
-                                  .value
-                              )
-                            }
-                            className={`cursor-pointer appearance-none rounded-full border px-3 py-1.5 pr-7 text-xs font-medium outline-none transition focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 ${getStatusClass(
-                              lead.status
-                            )}`}
-                          >
-
-                            {STATUS_OPTIONS.map(
-                              (
-                                item
-                              ) => (
-
-                                <option
-                                  key={
-                                    item
-                                  }
-                                  value={
-                                    item
-                                  }
-                                  className="bg-white text-gray-800"
-                                >
-                                  {formatStatus(
-                                    item
-                                  )}
-                                </option>
-
-                              )
-                            )}
-
-                          </select>
-
-                          {updatingStatusId ===
-                            lead.id && (
-
-                            <Loader2
-                              size={13}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin"
-                            />
-
-                          )}
-
-                        </div>
-
-                      </td>
-
-                      {/* FOLLOW UP */}
-
-                      <td className="px-5 py-4 align-top">
-
-                        <div className="text-sm text-gray-700">
-                          {formatDate(
+                    {/* Follow Up */}
+                    <td className="px-5 py-4 text-sm text-slate-600">
+                      {lead.follow_up_date
+                        ? formatDate(
                             lead.follow_up_date
-                          )}
-                        </div>
+                          )
+                        : "-"}
+                    </td>
 
-                      </td>
+                    {/* Action */}
+                    <td className="px-5 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        {/* Quick Call */}
+                        <a
+                          href={`tel:${lead.mobile}`}
+                          title="Call customer"
+                          className="inline-flex items-center justify-center rounded-lg border border-green-200 bg-green-50 p-2 text-green-700 hover:bg-green-100"
+                        >
+                          <Phone size={15} />
+                        </a>
 
-                      {/* ACTION */}
+                        {/* Quick WhatsApp */}
+                        <a
+                          href={`https://wa.me/91${lead.mobile}?text=${encodeURIComponent(
+                            `Hello ${lead.customer_name}, this is ShriRam Solar. We received your solar enquiry (${lead.lead_code}). We would be happy to assist you.`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="WhatsApp customer"
+                          className="inline-flex items-center justify-center rounded-lg border border-green-200 bg-green-50 p-2 text-green-700 hover:bg-green-100"
+                        >
+                          <MessageCircle size={15} />
+                        </a>
 
-                      <td className="px-5 py-4 text-right align-top">
+                        {/* View */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openLeadView(lead)
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <Eye size={15} />
+                          View
+                        </button>
 
-                        <div className="flex justify-end gap-2">
-
-                          {/* VIEW */}
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleViewLead(
-                                lead
-                              )
-                            }
-                            title="View Lead"
-                            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                          >
-                            <Eye
-                              size={16}
-                            />
-
-                            View
-                          </button>
-
-                          {/* EDIT */}
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleEditLead(
-                                lead
-                              )
-                            }
-                            title="Edit Lead"
-                            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                          >
-                            <Edit
-                              size={16}
-                            />
-
-                            Edit
-                          </button>
-
-                        </div>
-
-                      </td>
-
-                    </tr>
-
-                  )
-                )
-
+                        {/* Edit */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openLeadEdit(lead)
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                        >
+                          <Pencil size={15} />
+                          Edit
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
-
             </tbody>
-
           </table>
-
         </div>
 
-        {/* FOOTER */}
-
-        {!loading && (
-
-          <div className="border-t border-gray-200 bg-gray-50 px-5 py-3">
-
-            <p className="text-xs text-gray-500">
-
-              Showing{" "}
-
-              <span className="font-medium text-gray-700">
-                {
-                  filteredLeads.length
-                }
-              </span>{" "}
-
-              of{" "}
-
-              <span className="font-medium text-gray-700">
-                {leads.length}
-              </span>{" "}
-
-              leads
-
-            </p>
-
-          </div>
-
-        )}
-
+        {/* Footer */}
+        <div className="border-t bg-slate-50 px-5 py-3">
+          <p className="text-xs text-slate-500">
+            Showing {filteredLeads.length} of{" "}
+            {leads.length} leads
+          </p>
+        </div>
       </div>
 
-      {/* =====================================================
-          ADD LEAD
-      ====================================================== */}
+      {/* =========================================
+          ADD / EDIT LEAD MODAL
+      ========================================= */}
+      {(showAddLead || editLead) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {editLead
+                    ? "Edit Lead"
+                    : "Add Lead"}
+                </h2>
 
-      {showAddLead && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {editLead
+                    ? "Update the solar business enquiry."
+                    : "Add a new solar business enquiry."}
+                </p>
+              </div>
 
-        <LeadForm
-          onClose={() =>
-            setShowAddLead(false)
-          }
-          onSaved={
-            handleLeadSaved
-          }
-        />
+              <button
+                type="button"
+                onClick={closeLeadForm}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
+            {/* Form */}
+            <div className="p-6">
+              <LeadForm
+                lead={editLead}
+                onSaved={handleLeadSaved}
+                onClose={closeLeadForm}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* =====================================================
-          EDIT LEAD
-      ====================================================== */}
-
-      {editLead && (
-
-        <LeadForm
-          lead={editLead}
-          onClose={
-            closeEditLead
-          }
-          onSaved={
-            handleLeadSaved
-          }
-        />
-
-      )}
-
-      {/* =====================================================
+      {/* =========================================
           VIEW LEAD MODAL
-      ====================================================== */}
+      ========================================= */}
+      {viewLead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Lead Details
+                </h2>
 
-      {showViewLead &&
-        selectedLead && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {viewLead.lead_code}
+                </p>
+              </div>
 
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <button
+                type="button"
+                onClick={closeLeadView}
+                disabled={savingFollowUp}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-            <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="space-y-6 p-6">
+              {/* Lead Information */}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-slate-700">
+                  Lead Information
+                </h3>
 
-              {/* MODAL HEADER */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <LeadDetail
+                    label="Customer"
+                    value={viewLead.customer_name}
+                  />
 
-              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                  <LeadDetail
+                    label="Mobile"
+                    value={viewLead.mobile}
+                  />
 
-                <div>
+                  <LeadDetail
+                    label="Email"
+                    value={viewLead.email}
+                  />
 
-                  <div className="flex items-center gap-3">
+                  <LeadDetail
+                    label="City"
+                    value={viewLead.city}
+                  />
 
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      Lead Details
-                    </h2>
+                  <LeadDetail
+                    label="District"
+                    value={viewLead.district}
+                  />
 
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-medium ${getStatusClass(
-                        selectedLead.status
-                      )}`}
-                    >
-                      {formatStatus(
-                        selectedLead.status
-                      )}
-                    </span>
+                  <LeadDetail
+                    label="Service"
+                    value={formatStatus(
+                      viewLead.service_type
+                    )}
+                  />
 
-                  </div>
-
-                  <p className="mt-1 text-sm text-gray-500">
-                    {
-                      selectedLead.lead_code
+                  <LeadDetail
+                    label="Capacity"
+                    value={
+                      viewLead.estimated_capacity
+                        ? `${viewLead.estimated_capacity} kW`
+                        : "-"
                     }
-                  </p>
+                  />
 
+                  <LeadDetail
+                    label="Property Type"
+                    value={
+                      getPropertyType(viewLead.requirement) || "-"
+                    }
+                  />
+
+                  <LeadDetail
+                    label="Monthly Electricity Bill"
+                    value={
+                      getMonthlyBill(viewLead.requirement) || "-"
+                    }
+                  />
+
+                  <LeadDetail
+                    label="Source"
+                    value={viewLead.source}
+                  />
+
+                  <LeadDetail
+                    label="Created"
+                    value={formatDate(
+                      viewLead.created_at
+                    )}
+                  />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={
-                    closeViewLead
-                  }
-                  className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
-                >
-                  <X size={20} />
-                </button>
-
               </div>
 
-              {/* MODAL BODY */}
+              {/* Requirement */}
+              {viewLead.requirement && (
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                    Requirement
+                  </h3>
 
-              <div className="max-h-[calc(90vh-145px)] overflow-y-auto p-6">
-
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-
-                  {/* CUSTOMER INFORMATION */}
-
-                  <div className="rounded-xl border border-gray-200 p-5">
-
-                    <div className="mb-4 flex items-center gap-2">
-
-                      <User
-                        size={18}
-                        className="text-blue-600"
-                      />
-
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Customer Information
-                      </h3>
-
-                    </div>
-
-                    <div className="space-y-3">
-
-                      <DetailRow
-                        label="Customer Name"
-                        value={
-                          selectedLead.customer_name
-                        }
-                      />
-
-                      <DetailRow
-                        label="Mobile"
-                        value={
-                          selectedLead.mobile
-                        }
-                        icon={
-                          <Phone
-                            size={14}
-                          />
-                        }
-                      />
-
-                      <DetailRow
-                        label="Email"
-                        value={
-                          selectedLead.email ||
-                          "-"
-                        }
-                        icon={
-                          <Mail
-                            size={14}
-                          />
-                        }
-                      />
-
-                      <DetailRow
-                        label="Location"
-                        value={[
-                          selectedLead.city,
-                          selectedLead.district,
-                        ]
-                          .filter(
-                            Boolean
-                          )
-                          .join(
-                            ", "
-                          ) || "-"}
-                        icon={
-                          <MapPin
-                            size={14}
-                          />
-                        }
-                      />
-
-                    </div>
-
+                  <div className="rounded-xl border bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                    {viewLead.requirement}
                   </div>
+                </div>
+              )}
 
-                  {/* LEAD INFORMATION */}
+              {/* Follow-up Management */}
+              <div className="border-t pt-6">
+                <h3 className="mb-4 text-sm font-semibold text-slate-700">
+                  Follow-up Management
+                </h3>
 
-                  <div className="rounded-xl border border-gray-200 p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Status */}
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Status
+                    </label>
 
-                    <div className="mb-4 flex items-center gap-2">
+                    <select
+                      value={followUpStatus}
+                      onChange={(e) =>
+                        setFollowUpStatus(
+                          e.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+                    >
+                      <option value="NEW">
+                        New
+                      </option>
 
-                      <FileText
-                        size={18}
-                        className="text-blue-600"
-                      />
+                      <option value="CONTACTED">
+                        Contacted
+                      </option>
 
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Lead Information
-                      </h3>
-
-                    </div>
-
-                    <div className="space-y-3">
-
-                      <DetailRow
-                        label="Lead Code"
-                        value={
-                          selectedLead.lead_code
-                        }
-                      />
-
-                      <DetailRow
-                        label="Service"
-                        value={
-                          selectedLead.service_type
-                        }
-                        icon={
-                          <Wrench
-                            size={14}
-                          />
-                        }
-                      />
-
-                      <DetailRow
-                        label="Capacity"
-                        value={
-                          selectedLead.estimated_capacity !==
-                            null &&
-                          selectedLead.estimated_capacity !==
-                            undefined &&
-                          selectedLead.estimated_capacity !==
-                            ""
-                            ? `${selectedLead.estimated_capacity} kW`
-                            : "-"
-                        }
-                      />
-
-                      <DetailRow
-                        label="Source"
-                        value={
-                          selectedLead.source ||
-                          "-"
-                        }
-                      />
-
-                    </div>
-
-                  </div>
-
-                  {/* FOLLOW UP */}
-
-                  <div className="rounded-xl border border-gray-200 p-5">
-
-                    <div className="mb-4 flex items-center gap-2">
-
-                      <Calendar
-                        size={18}
-                        className="text-blue-600"
-                      />
-
-                      <h3 className="text-sm font-semibold text-gray-900">
+                      <option value="FOLLOW_UP">
                         Follow Up
-                      </h3>
+                      </option>
 
-                    </div>
+                      <option value="QUOTED">
+                        Quoted
+                      </option>
 
-                    <div className="space-y-3">
+                      <option value="CONVERTED">
+                        Converted
+                      </option>
 
-                      <DetailRow
-                        label="Follow-up Date"
-                        value={formatDate(
-                          selectedLead.follow_up_date
-                        )}
-                      />
+                      <option value="LOST">
+                        Lost
+                      </option>
 
-                      <DetailRow
-                        label="Created On"
-                        value={formatDateTime(
-                          selectedLead.created_at
-                        )}
-                      />
-
-                      <DetailRow
-                        label="Last Updated"
-                        value={formatDateTime(
-                          selectedLead.updated_at
-                        )}
-                      />
-
-                    </div>
-
+                      <option value="CANCELLED">
+                        Cancelled
+                      </option>
+                    </select>
                   </div>
 
-                  {/* ASSIGNMENT */}
+                  {/* Follow-up Date */}
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Follow-up Date
+                    </label>
 
-                  <div className="rounded-xl border border-gray-200 p-5">
+                    <input
+                      type="date"
+                      value={followUpDate}
+                      onChange={(e) =>
+                        setFollowUpDate(
+                          e.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+                    />
 
-                    <div className="mb-4 flex items-center gap-2">
-
-                      <Users
-                        size={18}
-                        className="text-blue-600"
-                      />
-
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Assignment
-                      </h3>
-
-                    </div>
-
-                    <div className="space-y-3">
-
-                      <DetailRow
-                        label="Assigned To"
-                        value={
-                          selectedLead.assigned_user_name ||
-                          "Not Assigned"
-                        }
-                      />
-
-                    </div>
-
+                    {followUpStatus ===
+                      "FOLLOW_UP" && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Follow-up date is required for
+                        Follow Up status.
+                      </p>
+                    )}
                   </div>
-
-                  {/* CONVERTED CUSTOMER */}
-
-                  {selectedLead.converted_customer_id && (
-
-                    <div className="rounded-xl border border-green-200 bg-green-50 p-5 md:col-span-2">
-
-                      <div className="mb-3 flex items-center gap-2">
-
-                        <UserPlus
-                          size={18}
-                          className="text-green-600"
-                        />
-
-                        <h3 className="text-sm font-semibold text-green-800">
-                          Converted Customer
-                        </h3>
-
-                      </div>
-
-                      <DetailRow
-                        label="Customer ID"
-                        value={String(
-                          selectedLead.converted_customer_id
-                        )}
-                      />
-
-                    </div>
-
-                  )}
-
-                  {/* REQUIREMENT */}
-
-                  <div className="rounded-xl border border-gray-200 p-5 md:col-span-2">
-
-                    <div className="mb-4 flex items-center gap-2">
-
-                      <FileText
-                        size={18}
-                        className="text-blue-600"
-                      />
-
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Customer Requirement
-                      </h3>
-
-                    </div>
-
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-gray-600">
-                      {selectedLead.requirement ||
-                        "No requirement added."}
-                    </p>
-
-                  </div>
-
-                  {/* NOTES */}
-
-                  <div className="rounded-xl border border-gray-200 p-5 md:col-span-2">
-
-                    <div className="mb-4 flex items-center gap-2">
-
-                      <FileText
-                        size={18}
-                        className="text-blue-600"
-                      />
-
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Internal Notes
-                      </h3>
-
-                    </div>
-
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-gray-600">
-                      {selectedLead.notes ||
-                        "No notes added."}
-                    </p>
-
-                  </div>
-
                 </div>
 
+                {/* Notes */}
+                <div className="mt-4">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Follow-up Notes
+                  </label>
+
+                  <textarea
+                    value={followUpNotes}
+                    onChange={(e) =>
+                      setFollowUpNotes(
+                        e.target.value
+                      )
+                    }
+                    rows={4}
+                    maxLength={2000}
+                    placeholder="Enter follow-up notes..."
+                    className="w-full resize-none rounded-lg border border-slate-300 px-3 py-3 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+                  />
+
+                  <p className="mt-1 text-right text-xs text-slate-400">
+                    {followUpNotes.length}/2000
+                  </p>
+                </div>
+
+                {/* Success */}
+                {followUpMessage && (
+                  <div className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+                    {followUpMessage}
+                  </div>
+                )}
+
+                {/* Error */}
+                {followUpError && (
+                  <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                    {followUpError}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex flex-col gap-3 border-t bg-slate-50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              {/* Communication */}
+              <div className="flex gap-2">
+                <a
+                  href={`tel:${viewLead.mobile}`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Phone size={16} />
+                  Call
+                </a>
+
+                <a
+                  href={`https://wa.me/91${viewLead.mobile}?text=${encodeURIComponent(
+                    `Hello ${viewLead.customer_name}, this is ShriRam Solar. We received your solar enquiry (${viewLead.lead_code}). We would be happy to assist you.`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700"
+                >
+                  <MessageCircle size={16} />
+                  WhatsApp
+                </a>
               </div>
 
-              {/* MODAL FOOTER */}
-
-              <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4">
-
-                {/* CLOSE */}
-
+              {/* Actions */}
+              <div className="flex flex-wrap justify-end gap-2">
+                {/* Close */}
                 <button
                   type="button"
-                  onClick={
-                    closeViewLead
-                  }
-                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100"
+                  onClick={closeLeadView}
+                  disabled={savingFollowUp}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   Close
                 </button>
 
-                {/* CONVERT */}
+                {/* Convert to Customer */}
+                {viewLead.status !== "CONVERTED" && (
+                  <button
+                    type="button"
+                    onClick={convertToCustomer}
+                    disabled={savingFollowUp}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <UserPlus size={16} />
 
-                {selectedLead.status !==
-                  "CONVERTED" &&
-                  selectedLead.status !==
-                    "LOST" &&
-                  selectedLead.status !==
-                    "CANCELLED" &&
-                  !selectedLead.converted_customer_id && (
+                    {savingFollowUp
+                      ? "Converting..."
+                      : "Convert to Customer"}
+                  </button>
+                )}
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleConvertLead(
-                          selectedLead
-                        )
-                      }
-                      disabled={
-                        convertingLeadId ===
-                        selectedLead.id
-                      }
-                      className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-
-                      {convertingLeadId ===
-                      selectedLead.id ? (
-                        <>
-                          <Loader2
-                            size={16}
-                            className="animate-spin"
-                          />
-
-                          Converting...
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus
-                            size={16}
-                          />
-
-                          Convert to Customer
-                        </>
-                      )}
-
-                    </button>
-
-                  )}
-
-                {/* EDIT */}
-
+                {/* Save Follow-up */}
                 <button
                   type="button"
-                  onClick={() => {
-                    closeViewLead();
-
-                    handleEditLead(
-                      selectedLead
-                    );
-                  }}
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                  onClick={saveFollowUp}
+                  disabled={savingFollowUp}
+                  className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Edit size={16} />
+                  <Save size={16} />
 
-                  Edit Lead
+                  {savingFollowUp
+                    ? "Saving..."
+                    : "Save Follow-up"}
                 </button>
-
               </div>
-
             </div>
-
           </div>
-
-        )}
-
+        </div>
+      )}
     </div>
   );
 }
 
-/* ============================================================
-   DETAIL ROW
-============================================================ */
+/* =========================================
+   SOLAR LEAD HELPERS
+========================================= */
 
-function DetailRow({
+function extractRequirementValue(
+  requirement: string | null | undefined,
+  key: string
+) {
+  if (!requirement) {
+    return "";
+  }
+
+  const parts = requirement.split(" | ");
+
+  const part = parts.find((item) =>
+    item.toLowerCase().startsWith(`${key.toLowerCase()}:`)
+  );
+
+  if (!part) {
+    return "";
+  }
+
+  return part.substring(part.indexOf(":") + 1).trim();
+}
+
+function getPropertyType(requirement: string | null | undefined) {
+  return extractRequirementValue(requirement, "Property");
+}
+
+function getMonthlyBill(requirement: string | null | undefined) {
+  const value = extractRequirementValue(
+    requirement,
+    "Monthly Electricity Bill"
+  );
+
+  return value || "";
+}
+
+/* =========================================
+   STATUS BADGE
+========================================= */
+
+function StatusBadge({
+  status,
+}: {
+  status: string;
+}) {
+  const styles: Record<string, string> = {
+    NEW: "bg-blue-50 text-blue-700",
+    CONTACTED: "bg-yellow-50 text-yellow-700",
+    FOLLOW_UP: "bg-purple-50 text-purple-700",
+    QUOTED: "bg-orange-50 text-orange-700",
+    CONVERTED: "bg-green-50 text-green-700",
+    LOST: "bg-red-50 text-red-700",
+    CANCELLED: "bg-slate-100 text-slate-600",
+  };
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+        styles[status] ||
+        "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {formatStatus(status)}
+    </span>
+  );
+}
+
+/* =========================================
+   LEAD DETAIL
+========================================= */
+
+function LeadDetail({
   label,
   value,
-  icon,
 }: {
   label: string;
-  value: string;
-  icon?: React.ReactNode;
+  value: string | null | undefined;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-
-      <div className="flex items-center gap-2 text-xs text-gray-500">
-        {icon}
-
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
         {label}
-      </div>
+      </p>
 
-      <div className="max-w-[60%] text-right text-sm font-medium text-gray-800">
-        {value}
-      </div>
-
+      <p className="mt-1 text-sm text-slate-700">
+        {value || "-"}
+      </p>
     </div>
   );
+}
+
+/* =========================================
+   FORMAT STATUS
+========================================= */
+
+function formatStatus(
+  value: string | null | undefined
+) {
+  if (!value) {
+    return "-";
+  }
+
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) =>
+      char.toUpperCase()
+    );
+}
+
+/* =========================================
+   FORMAT DATE
+========================================= */
+
+function formatDate(
+  value: string | null | undefined
+) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value.substring(0, 10);
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }

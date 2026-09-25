@@ -40,15 +40,21 @@ export async function GET(
           t.email,
           t.address,
           t.specialization,
+          t.experience_years,
           t.joining_date,
           t.status,
           t.created_at,
           t.updated_at,
+
           COUNT(DISTINCT ss.id)::int AS assigned_systems_count
+
         FROM technicians t
+
         LEFT JOIN solar_systems ss
           ON ss.installer_technician_id = t.id
+
         WHERE t.id = $1
+
         GROUP BY
           t.id,
           t.technician_code,
@@ -57,6 +63,7 @@ export async function GET(
           t.email,
           t.address,
           t.specialization,
+          t.experience_years,
           t.joining_date,
           t.status,
           t.created_at,
@@ -124,10 +131,14 @@ export async function PATCH(
       email,
       address,
       specialization,
+      experienceYears,
       joiningDate,
       status,
     } = body;
 
+    /*
+     * Technician name validation
+     */
     if (!technicianName?.trim()) {
       return NextResponse.json(
         {
@@ -138,6 +149,9 @@ export async function PATCH(
       );
     }
 
+    /*
+     * Mobile validation
+     */
     if (!mobile?.trim()) {
       return NextResponse.json(
         {
@@ -148,6 +162,9 @@ export async function PATCH(
       );
     }
 
+    /*
+     * Status validation
+     */
     if (!["ACTIVE", "INACTIVE"].includes(status)) {
       return NextResponse.json(
         {
@@ -158,6 +175,39 @@ export async function PATCH(
       );
     }
 
+    /*
+     * Experience validation
+     */
+    let experienceYearsValue: number | null = null;
+
+    if (
+      experienceYears !== null &&
+      experienceYears !== undefined &&
+      experienceYears !== ""
+    ) {
+      const parsedExperience = Number(experienceYears);
+
+      if (
+        !Number.isFinite(parsedExperience) ||
+        !Number.isInteger(parsedExperience) ||
+        parsedExperience < 0
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Experience must be a valid whole number of years.",
+          },
+          { status: 400 }
+        );
+      }
+
+      experienceYearsValue = parsedExperience;
+    }
+
+    /*
+     * Check technician exists
+     */
     const technicianCheck = await pool.query(
       `
         SELECT id
@@ -177,6 +227,9 @@ export async function PATCH(
       );
     }
 
+    /*
+     * Duplicate active technician check
+     */
     const duplicateCheck = await pool.query(
       `
         SELECT id
@@ -200,6 +253,9 @@ export async function PATCH(
       );
     }
 
+    /*
+     * Update technician
+     */
     const result = await pool.query(
       `
         UPDATE technicians
@@ -209,10 +265,13 @@ export async function PATCH(
           email = $3,
           address = $4,
           specialization = $5,
-          joining_date = $6,
-          status = $7,
+          experience_years = $6,
+          joining_date = $7,
+          status = $8,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $8
+
+        WHERE id = $9
+
         RETURNING
           id,
           technician_code,
@@ -221,6 +280,7 @@ export async function PATCH(
           email,
           address,
           specialization,
+          experience_years,
           joining_date,
           status,
           created_at,
@@ -232,6 +292,7 @@ export async function PATCH(
         email?.trim() || null,
         address?.trim() || null,
         specialization?.trim() || null,
+        experienceYearsValue,
         joiningDate || null,
         status,
         technicianId,

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/auth";
 import AdminSidebar from "@/components/admin/AdminSidebar";
-
+import AdminHeader from "@/components/admin/AdminHeader";
 export default async function ProtectedAdminLayout({
   children,
 }: Readonly<{
@@ -21,27 +21,7 @@ export default async function ProtectedAdminLayout({
       {/* Main Area */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
-        <header className="flex h-16 items-center justify-between border-b bg-white px-6">
-          <div>
-            <h2 className="font-semibold text-slate-800">
-              ShriRam Solar
-            </h2>
-
-            <p className="text-xs text-slate-500">
-              Solar Business Management System
-            </p>
-          </div>
-
-          <div className="text-right">
-            <p className="text-sm font-medium text-slate-800">
-              {user.fullName}
-            </p>
-
-            <p className="text-xs text-slate-500">
-              {user.role}
-            </p>
-          </div>
-        </header>
+        <AdminHeader user={user} />
 
         {/* Page Content */}
         <main className="flex-1 p-6">

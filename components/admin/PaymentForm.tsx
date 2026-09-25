@@ -111,7 +111,10 @@ export default function PaymentForm({
         setError("");
 
         const response = await fetch(
-          "/api/admin/invoices"
+          "/api/admin/invoices",
+          {
+             cache: "no-store",
+          }
         );
 
         const result = await response.json();
@@ -137,6 +140,39 @@ export default function PaymentForm({
 
     loadInvoices();
   }, []);
+
+  // ============================================================
+  // Available Invoices
+  //
+  // New Payment:
+  // Only invoices having pending amount > 0
+  //
+  // Edit Payment:
+  // Also include the invoice currently linked with
+  // the payment being edited, even if pending amount is 0.
+  // ============================================================
+
+  const availableInvoices = useMemo(() => {
+    return invoices.filter((invoice) => {
+      const pendingAmount = Number(
+        invoice.pending_amount || 0
+      );
+
+      // While editing, keep the current payment's
+      // invoice available even if its pending amount is 0.
+      if (
+        isEdit &&
+        payment &&
+        invoice.id === payment.invoice_id
+      ) {
+        return true;
+      }
+
+      // New payment:
+      // Only invoices with pending amount greater than zero.
+      return pendingAmount > 0;
+    });
+  }, [invoices, isEdit, payment]);
 
   // ============================================================
   // Selected Invoice
@@ -168,9 +204,9 @@ export default function PaymentForm({
 
     // While editing, current payment is already
     // included in the invoice paid amount.
+    //
     // Add it back to determine maximum allowed
     // payment amount.
-
     return invoicePending + Number(payment.amount || 0);
   }, [
     selectedInvoice,
@@ -377,10 +413,12 @@ export default function PaymentForm({
                 <option value="">
                   {loadingInvoices
                     ? "Loading invoices..."
+                    : availableInvoices.length === 0
+                    ? "No pending invoices available"
                     : "Select Invoice"}
                 </option>
 
-                {invoices.map((invoice) => (
+                {availableInvoices.map((invoice) => (
                   <option
                     key={invoice.id}
                     value={invoice.id}
@@ -395,6 +433,15 @@ export default function PaymentForm({
                 ))}
 
               </select>
+
+              {!loadingInvoices &&
+                !isEdit &&
+                availableInvoices.length === 0 && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    No invoices with pending amount are
+                    available for payment.
+                  </p>
+                )}
 
             </div>
 
@@ -535,6 +582,11 @@ export default function PaymentForm({
                   type="number"
                   min="0.01"
                   step="0.01"
+                  max={
+                    availablePendingAmount > 0
+                      ? availablePendingAmount
+                      : undefined
+                  }
                   value={form.amount}
                   onChange={(event) =>
                     handleChange(
@@ -658,7 +710,11 @@ export default function PaymentForm({
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={
+                saving ||
+                (!isEdit &&
+                  availableInvoices.length === 0)
+              }
               className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving

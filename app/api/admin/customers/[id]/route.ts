@@ -13,13 +13,16 @@ const customerSchema = z.object({
   district: z.string().optional().nullable(),
   state: z.string().optional().nullable(),
   pincode: z.string().optional().nullable(),
+
   customerType: z.enum([
     "RESIDENTIAL",
     "COMMERCIAL",
     "INDUSTRIAL",
     "GOVERNMENT",
   ]),
+
   status: z.enum(["ACTIVE", "INACTIVE"]),
+
   notes: z.string().optional().nullable(),
 });
 
@@ -28,6 +31,50 @@ type RouteContext = {
     id: string;
   }>;
 };
+
+/* -------------------------------------------------------------------------- */
+/* Helper: Check Customer Dependencies                                        */
+/* -------------------------------------------------------------------------- */
+
+async function getCustomerDependencies(customerId: string) {
+  const result = await pool.query(
+    `
+    SELECT
+      EXISTS (
+        SELECT 1
+        FROM invoices
+        WHERE customer_id = $1
+      ) AS has_invoices,
+
+      EXISTS (
+        SELECT 1
+        FROM payments p
+        INNER JOIN invoices i
+          ON i.id = p.invoice_id
+        WHERE i.customer_id = $1
+      ) AS has_payments,
+
+      EXISTS (
+        SELECT 1
+        FROM service_jobs
+        WHERE customer_id = $1
+      ) AS has_service_jobs,
+
+      EXISTS (
+        SELECT 1
+        FROM solar_systems
+        WHERE customer_id = $1
+      ) AS has_solar_systems
+    `,
+    [customerId]
+  );
+
+  return result.rows[0];
+}
+
+/* -------------------------------------------------------------------------- */
+/* GET CUSTOMER                                                               */
+/* -------------------------------------------------------------------------- */
 
 export async function GET(
   _request: NextRequest,
@@ -80,6 +127,7 @@ export async function GET(
         )::int AS converted_leads_count
 
       FROM customers c
+
       LEFT JOIN leads l
         ON l.converted_customer_id = c.id
 
@@ -133,6 +181,10 @@ export async function GET(
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* PATCH CUSTOMER                                                             */
+/* -------------------------------------------------------------------------- */
+
 export async function PATCH(
   request: NextRequest,
   { params }: RouteContext
@@ -173,9 +225,15 @@ export async function PATCH(
 
     const data = parsed.data;
 
+    /* ---------------------------------------------------------------------- */
+    /* Check Customer Exists                                                   */
+    /* ---------------------------------------------------------------------- */
+
     const existingCustomer = await pool.query(
       `
-      SELECT id
+      SELECT
+        id,
+        status
       FROM customers
       WHERE id = $1
       `,
@@ -191,6 +249,10 @@ export async function PATCH(
         { status: 404 }
       );
     }
+
+    /* ---------------------------------------------------------------------- */
+    /* Check Duplicate Mobile                                                 */
+    /* ---------------------------------------------------------------------- */
 
     const duplicateMobile = await pool.query(
       `
@@ -215,6 +277,49 @@ export async function PATCH(
       );
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Protected Customer Check                                               */
+    /* ---------------------------------------------------------------------- */
+
+    if (data.status === "INACTIVE") {
+      const dependencies =
+        await getCustomerDependencies(id);
+
+      const hasDependency =
+        dependencies.has_invoices ||
+        dependencies.has_payments ||
+        dependencies.has_service_jobs ||
+        dependencies.has_solar_systems;
+
+      if (hasDependency) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Customer cannot be marked inactive because transaction or service records exist.",
+            details: {
+              has_invoices:
+                dependencies.has_invoices,
+
+              has_payments:
+                dependencies.has_payments,
+
+              has_service_jobs:
+                dependencies.has_service_jobs,
+
+              has_solar_systems:
+                dependencies.has_solar_systems,
+            },
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Update Customer                                                         */
+    /* ---------------------------------------------------------------------- */
+
     const result = await pool.query(
       `
       UPDATE customers
@@ -233,6 +338,7 @@ export async function PATCH(
         notes = $12,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $13
+
       RETURNING
         id,
         customer_code,
@@ -282,6 +388,136 @@ export async function PATCH(
         message: "Failed to update customer.",
       },
       { status: 500 }
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* DELETE CUSTOMER                                                            */
+/* -------------------------------------------------------------------------- */
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: RouteContext
+) {
+  const { user, response } = await requireAuth();
+
+  if (!user) {
+    return response;
+  }
+
+  const { id } = await params;
+
+  if (!/^\d+$/.test(id)) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Invalid customer ID.",
+      },
+      { status: 400 }
+    );
+  }
+
+  try {
+    /* ---------------------------------------------------------------------- */
+    /* Check Customer Exists                                                   */
+    /* ---------------------------------------------------------------------- */
+
+    const existingCustomer = await pool.query(
+      `
+      SELECT
+        id,
+        customer_code,
+        customer_name,
+        status
+      FROM customers
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    if (existingCustomer.rows.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Customer not found.",
+        },
+        { status: 404 }
+      );
+    }
+
+    const customer =
+      existingCustomer.rows[0];
+
+    /* ---------------------------------------------------------------------- */
+    /* Check Dependencies                                                      */
+    /* ---------------------------------------------------------------------- */
+
+    const dependencies =
+      await getCustomerDependencies(id);
+
+    const hasDependency =
+      dependencies.has_invoices ||
+      dependencies.has_payments ||
+      dependencies.has_service_jobs ||
+      dependencies.has_solar_systems;
+
+    if (hasDependency) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Customer cannot be deleted because transaction or service records exist.",
+          details: {
+            customer_code:
+              customer.customer_code,
+
+            customer_name:
+              customer.customer_name,
+
+            has_invoices:
+              dependencies.has_invoices,
+
+            has_payments:
+              dependencies.has_payments,
+
+            has_service_jobs:
+              dependencies.has_service_jobs,
+
+            has_solar_systems:
+              dependencies.has_solar_systems,
+          },
+        },
+        { status: 409 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Delete Customer                                                         */
+    /* ---------------------------------------------------------------------- */
+
+    await pool.query(
+      `
+      DELETE FROM customers
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: "Customer deleted successfully.",
+    });
+  } catch (error) {
+    console.error("DELETE CUSTOMER ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Customer cannot be deleted because related records exist.",
+      },
+      { status: 409 }
     );
   }
 }

@@ -117,7 +117,10 @@ export default function Home() {
     name: "",
     mobile: "",
     city: "",
-    service: "",
+    service: "INSTALLATION",
+    propertyType: "",
+    monthlyBill: "",
+    solarCapacity: "",
     message: "",
   });
 
@@ -156,7 +159,10 @@ export default function Home() {
         name: "",
         mobile: "",
         city: "",
-        service: "",
+        service: "INSTALLATION",
+        propertyType: "",
+        monthlyBill: "",
+        solarCapacity: "",
         message: "",
       });
     } catch (error) {
@@ -327,17 +333,17 @@ export default function Home() {
             </div>
 
             <h1 className="text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-              Switch to <span className="text-yellow-400">Solar.</span>
+              बिजली बिल कम करें.
               <br />
-              Save Money.
+              <span className="text-yellow-400">Solar लगाएं.</span>
               <br />
-              <span className="text-white">Save Earth.</span>
+              <span className="text-white">आज ही Free Quote लें.</span>
             </h1>
 
             <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-200 sm:text-xl">
-              Complete solar solutions for your home, shop, factory and farm.
-              Installation, repair, cleaning and AMC — everything under one
-              roof.
+              घर, दुकान, ऑफिस या फैक्ट्री के लिए सही Solar System चुनें। Free
+              consultation, quotation और installation support — Chomu, Jaipur
+              और आसपास के क्षेत्रों में।
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
@@ -347,6 +353,14 @@ export default function Home() {
               >
                 Get Free Quote
                 <ArrowRight size={19} />
+              </a>
+
+              <a
+                href="tel:+918740881142"
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-white/60 bg-white/10 px-7 py-4 font-bold text-white backdrop-blur transition hover:bg-white hover:text-slate-950"
+              >
+                <Phone size={19} />
+                Call Solar Expert
               </a>
 
               <button
@@ -891,6 +905,70 @@ export default function Home() {
                 </select>
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <select
+                  required
+                  value={form.propertyType}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      propertyType: e.target.value,
+                    })
+                  }
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                >
+                  <option value="">Property Type *</option>
+                  <option value="HOME">Home</option>
+                  <option value="SHOP">Shop</option>
+                  <option value="OFFICE">Office</option>
+                  <option value="FACTORY">Factory</option>
+                  <option value="FARM">Farm</option>
+                </select>
+
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  value={form.monthlyBill}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      monthlyBill: e.target.value,
+                    })
+                  }
+                  placeholder="Monthly Electricity Bill ₹ *"
+                  className="rounded-xl border border-slate-200 px-4 py-3 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <select
+                  value={form.solarCapacity}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      solarCapacity: e.target.value,
+                    })
+                  }
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                >
+                  <option value="">Required Solar Size</option>
+                  <option value="2KW">2 KW</option>
+                  <option value="3KW">3 KW</option>
+                  <option value="5KW">5 KW</option>
+                  <option value="10KW">10 KW</option>
+                  <option value="UNKNOWN">Not Sure</option>
+                </select>
+
+                <a
+                  href="tel:+918740881142"
+                  className="flex items-center justify-center gap-2 rounded-xl border-2 border-green-600 px-4 py-3 font-bold text-green-700 transition hover:bg-green-50"
+                >
+                  <Phone size={19} />
+                  Talk to Solar Expert
+                </a>
+              </div>
+
               <textarea
                 rows={4}
                 value={form.message}
@@ -1050,15 +1128,35 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* FLOATING WHATSAPP */}
+      {/* MOBILE CALL + WHATSAPP CTA */}
+      <div className="fixed bottom-0 left-0 right-0 z-[60] flex border-t border-slate-200 bg-white p-2 shadow-2xl sm:hidden">
+        <a
+          href="tel:+918740881142"
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 py-3 font-black text-white"
+        >
+          <Phone size={19} />
+          Call Now
+        </a>
+
+        <a
+          href="https://wa.me/918740881142?text=Hello%20ShriRam%20Solar,%20mujhe%20solar%20lagwana%20hai.%20Please%20guide%20me."
+          target="_blank"
+          rel="noreferrer"
+          className="ml-2 flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-500 py-3 font-black text-white"
+        >
+          💬 WhatsApp
+        </a>
+      </div>
+
+      {/* DESKTOP FLOATING WHATSAPP */}
       <a
-        href="https://wa.me/918740881142"
+        href="https://wa.me/918740881142?text=Hello%20ShriRam%20Solar,%20mujhe%20solar%20lagwana%20hai.%20Please%20guide%20me."
         target="_blank"
         rel="noreferrer"
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-green-500 px-5 py-3 font-bold text-white shadow-2xl transition hover:scale-105 hover:bg-green-600"
+        className="fixed bottom-6 right-6 z-50 hidden items-center gap-2 rounded-full bg-green-500 px-5 py-3 font-bold text-white shadow-2xl transition hover:scale-105 hover:bg-green-600 sm:flex"
       >
         💬
-        <span className="hidden sm:inline">Chat on WhatsApp</span>
+        Chat on WhatsApp
       </a>
     </main>
   );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { pool } from "@/lib/db/db";
 
 const ALLOWED_SERVICES = new Set([
@@ -7,6 +8,22 @@ const ALLOWED_SERVICES = new Set([
   "REPAIR",
   "AMC",
   "INSPECTION",
+]);
+
+const ALLOWED_PROPERTY_TYPES = new Set([
+  "HOME",
+  "SHOP",
+  "OFFICE",
+  "FACTORY",
+  "FARM",
+]);
+
+const ALLOWED_SOLAR_CAPACITIES = new Set([
+  "2KW",
+  "3KW",
+  "5KW",
+  "10KW",
+  "UNKNOWN",
 ]);
 
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -78,6 +95,26 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function parseMonthlyBill(value: unknown) {
+  const text = cleanText(value);
+
+  if (!text) {
+    return null;
+  }
+
+  if (!/^\d+$/.test(text)) {
+    return null;
+  }
+
+  const amount = Number(text);
+
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 10000000) {
+    return null;
+  }
+
+  return amount;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // ---------------------------------------------------------
@@ -140,6 +177,9 @@ export async function POST(request: NextRequest) {
       email,
       city,
       service,
+      propertyType,
+      monthlyBill,
+      solarCapacity,
       message,
     } = body as Record<string, unknown>;
 
@@ -152,7 +192,14 @@ export async function POST(request: NextRequest) {
     const cleanEmail = cleanText(email);
     const cleanCity = cleanText(city);
     const cleanService = cleanText(service).toUpperCase();
+
+    const cleanPropertyType = cleanText(propertyType).toUpperCase();
+
+    const cleanSolarCapacity = cleanText(solarCapacity).toUpperCase();
+
     const cleanMessage = cleanText(message);
+
+    const parsedMonthlyBill = parseMonthlyBill(monthlyBill);
 
     // ---------------------------------------------------------
     // 5. REQUIRED FIELD VALIDATION
@@ -169,7 +216,55 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 6. LENGTH VALIDATION
+    // 6. NEW SOLAR LEAD FIELD VALIDATION
+    // ---------------------------------------------------------
+
+    if (
+      cleanPropertyType &&
+      !ALLOWED_PROPERTY_TYPES.has(cleanPropertyType)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid property type selected.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      cleanSolarCapacity &&
+      !ALLOWED_SOLAR_CAPACITIES.has(cleanSolarCapacity)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid solar capacity selected.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (cleanPropertyType && !cleanSolarCapacity && parsedMonthlyBill === null) {
+      // Allowed: customer can select property without capacity.
+      // No action required.
+    }
+
+    if (
+      cleanText(monthlyBill) &&
+      parsedMonthlyBill === null
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Please enter a valid monthly electricity bill.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 7. LENGTH VALIDATION
     // ---------------------------------------------------------
 
     if (cleanName.length > 100) {
@@ -196,7 +291,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          message: "Message is too long. Maximum 2000 characters allowed.",
+          message:
+            "Message is too long. Maximum 2000 characters allowed.",
         },
         { status: 400 }
       );
@@ -213,7 +309,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 7. MOBILE VALIDATION
+    // 8. MOBILE VALIDATION
     // ---------------------------------------------------------
 
     if (!/^[0-9]{10}$/.test(cleanMobile)) {
@@ -227,7 +323,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 8. EMAIL VALIDATION
+    // 9. EMAIL VALIDATION
     // ---------------------------------------------------------
 
     if (!isValidEmail(cleanEmail)) {
@@ -241,7 +337,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 9. SERVICE VALIDATION
+    // 10. SERVICE VALIDATION
     // ---------------------------------------------------------
 
     if (!ALLOWED_SERVICES.has(cleanService)) {
@@ -255,7 +351,41 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 10. DUPLICATE RECENT LEAD PROTECTION
+    // 11. BUILD SOLAR REQUIREMENT
+    // ---------------------------------------------------------
+
+    const requirementParts: string[] = [];
+
+    if (cleanPropertyType) {
+      requirementParts.push(`Property: ${cleanPropertyType}`);
+    }
+
+    if (parsedMonthlyBill !== null) {
+      requirementParts.push(
+        `Monthly Electricity Bill: ₹${parsedMonthlyBill}`
+      );
+    }
+
+    if (cleanMessage) {
+      requirementParts.push(`Customer Message: ${cleanMessage}`);
+    }
+
+    const requirement =
+      requirementParts.length > 0
+        ? requirementParts.join(" | ")
+        : null;
+
+    // ---------------------------------------------------------
+    // 12. ESTIMATED CAPACITY
+    // ---------------------------------------------------------
+
+const estimatedCapacity =
+  cleanSolarCapacity && cleanSolarCapacity !== "UNKNOWN"
+    ? Number(cleanSolarCapacity.replace("KW", ""))
+    : null;
+
+    // ---------------------------------------------------------
+    // 13. DUPLICATE RECENT LEAD PROTECTION
     // ---------------------------------------------------------
 
     const duplicateCheck = await pool.query(
@@ -284,7 +414,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---------------------------------------------------------
-    // 11. GENERATE LEAD CODE
+    // 14. GENERATE LEAD CODE
     // ---------------------------------------------------------
 
     const leadCode = `WEB-${Date.now()}-${Math.floor(
@@ -292,7 +422,7 @@ export async function POST(request: NextRequest) {
     )}`;
 
     // ---------------------------------------------------------
-    // 12. INSERT LEAD
+    // 15. INSERT LEAD
     // ---------------------------------------------------------
 
     const result = await pool.query(
@@ -337,8 +467,8 @@ export async function POST(request: NextRequest) {
         cleanCity,
         null,
         cleanService,
-        cleanMessage || null,
-        null,
+        requirement,
+        estimatedCapacity,
         "WEBSITE",
         "NEW",
         null,
@@ -347,7 +477,7 @@ export async function POST(request: NextRequest) {
     );
 
     // ---------------------------------------------------------
-    // 13. SUCCESS RESPONSE
+    // 16. SUCCESS RESPONSE
     // ---------------------------------------------------------
 
     return NextResponse.json(

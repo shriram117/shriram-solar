@@ -11,6 +11,7 @@ type Technician = {
   email: string | null;
   address: string | null;
   specialization: string | null;
+  experience_years: number | null;
   joining_date: string | null;
   status: string;
   assigned_systems_count: number;
@@ -104,6 +105,16 @@ export default function TechniciansPage() {
     return parsedDate.toLocaleDateString("en-IN");
   }
 
+  function formatExperience(experience: number | null) {
+    if (experience === null || experience === undefined) {
+      return "-";
+    }
+
+    return `${experience} ${
+      experience === 1 ? "Year" : "Years"
+    }`;
+  }
+
   function openAddForm() {
     setEditTechnician(null);
     setShowForm(true);
@@ -149,7 +160,9 @@ export default function TechniciansPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Total Technicians</p>
+          <p className="text-sm text-slate-500">
+            Total Technicians
+          </p>
 
           <p className="mt-2 text-2xl font-bold text-slate-800">
             {technicians.length}
@@ -157,12 +170,15 @@ export default function TechniciansPage() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Active Technicians</p>
+          <p className="text-sm text-slate-500">
+            Active Technicians
+          </p>
 
           <p className="mt-2 text-2xl font-bold text-green-600">
             {
               technicians.filter(
-                (technician) => technician.status === "ACTIVE"
+                (technician) =>
+                  technician.status === "ACTIVE"
               ).length
             }
           </p>
@@ -176,7 +192,10 @@ export default function TechniciansPage() {
           <p className="mt-2 text-2xl font-bold text-blue-600">
             {technicians.reduce(
               (total, technician) =>
-                total + Number(technician.assigned_systems_count || 0),
+                total +
+                Number(
+                  technician.assigned_systems_count || 0
+                ),
               0
             )}
           </p>
@@ -280,6 +299,10 @@ export default function TechniciansPage() {
                 </th>
 
                 <th className="px-4 py-3 text-center font-semibold text-slate-600">
+                  Experience
+                </th>
+
+                <th className="px-4 py-3 text-center font-semibold text-slate-600">
                   Assigned Systems
                 </th>
 
@@ -297,7 +320,7 @@ export default function TechniciansPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     Loading technicians...
@@ -306,7 +329,7 @@ export default function TechniciansPage() {
               ) : technicians.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     No technicians found.
@@ -342,6 +365,12 @@ export default function TechniciansPage() {
 
                     <td className="px-4 py-4 text-slate-600">
                       {technician.specialization || "-"}
+                    </td>
+
+                    <td className="px-4 py-4 text-center text-slate-700">
+                      {formatExperience(
+                        technician.experience_years
+                      )}
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -470,11 +499,25 @@ export default function TechniciansPage() {
 
                 <div>
                   <p className="text-xs font-medium uppercase text-slate-400">
+                    Experience
+                  </p>
+
+                  <p className="mt-1 text-slate-700">
+                    {formatExperience(
+                      viewTechnician.experience_years
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium uppercase text-slate-400">
                     Joining Date
                   </p>
 
                   <p className="mt-1 text-slate-700">
-                    {formatDate(viewTechnician.joining_date)}
+                    {formatDate(
+                      viewTechnician.joining_date
+                    )}
                   </p>
                 </div>
 

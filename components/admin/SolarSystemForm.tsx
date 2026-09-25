@@ -1,279 +1,502 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type SolarSystem = {
+type Customer = {
   id: number | string;
-  system_code: string;
-  customer_id: number | string;
-  system_capacity_kw: number | string;
-  panel_brand: string | null;
-  panel_model: string | null;
-  panel_quantity: number | null;
-  inverter_brand: string | null;
-  inverter_model: string | null;
-  inverter_capacity_kw: number | string | null;
-  installation_date: string | null;
-  installer_technician_id: number | string | null;
-  panel_warranty_years: number | string | null;
-  inverter_warranty_years: number | string | null;
-  net_metering_status: string;
-  subsidy_status: string;
-  system_status: string;
-  notes: string | null;
+  customer_code?: string | null;
+  customer_name: string;
+  mobile?: string | null;
+  status?: string | null;
 };
 
-type TechnicianOption = {
-  id: number;
-  technician_code: string;
+type Technician = {
+  id: number | string;
+  technician_code?: string | null;
   technician_name: string;
-  mobile: string;
-  specialization: string | null;
+  mobile?: string | null;
+  status?: string | null;
+};
+
+type SolarSystemFormData = {
+  id: string | number;
+  system_code?: string | null;
+  customer_id: string | number;
+
+  system_capacity_kw: string | number;
+
+  panel_brand?: string | null;
+  panel_model?: string | null;
+  panel_quantity?: string | number | null;
+
+  inverter_brand?: string | null;
+  inverter_model?: string | null;
+  inverter_capacity_kw?: string | number | null;
+
+  installation_date?: string | null;
+  installer_technician_id?: string | number | null;
+
+  panel_warranty_years?: string | number | null;
+  inverter_warranty_years?: string | number | null;
+
+  net_metering_status?: string | null;
+  subsidy_status?: string | null;
+  system_status?: string | null;
+
+  notes?: string | null;
 };
 
 type SolarSystemFormProps = {
-  customerId: number;
-  solarSystem?: SolarSystem | null;
+  customerId?: number | null;
+  solarSystem?: SolarSystemFormData | null;
   onClose: () => void;
   onSaved: () => void;
 };
 
+const NET_METERING_OPTIONS = [
+  "PENDING",
+  "APPLIED",
+  "APPROVED",
+  "INSTALLED",
+  "NOT_REQUIRED",
+];
+
+const SUBSIDY_OPTIONS = [
+  "NOT_APPLIED",
+  "APPLIED",
+  "APPROVED",
+  "RECEIVED",
+  "NOT_ELIGIBLE",
+];
+
+const SYSTEM_STATUS_OPTIONS = [
+  "ACTIVE",
+  "INACTIVE",
+  "UNDER_INSTALLATION",
+  "MAINTENANCE",
+];
+
+function cleanValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value);
+}
+
 export default function SolarSystemForm({
   customerId,
-  solarSystem = null,
+  solarSystem,
   onClose,
   onSaved,
 }: SolarSystemFormProps) {
   const isEditMode = Boolean(solarSystem);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
 
-  const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
-  const [techniciansLoading, setTechniciansLoading] = useState(false);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [loadingTechnicians, setLoadingTechnicians] = useState(true);
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const [form, setForm] = useState({
-    systemCapacityKw: "",
-    panelBrand: "",
-    panelModel: "",
-    panelQuantity: "",
-    inverterBrand: "",
-    inverterModel: "",
-    inverterCapacityKw: "",
-    installationDate: "",
-    installerTechnicianId: "",
-    panelWarrantyYears: "25",
-    inverterWarrantyYears: "5",
-    netMeteringStatus: "PENDING",
-    subsidyStatus: "NOT_APPLIED",
-    systemStatus: "ACTIVE",
-    notes: "",
+    customer_id: cleanValue(
+      solarSystem?.customer_id ?? customerId ?? ""
+    ),
+
+    system_capacity_kw: cleanValue(
+      solarSystem?.system_capacity_kw ?? ""
+    ),
+
+    panel_brand: cleanValue(solarSystem?.panel_brand),
+    panel_model: cleanValue(solarSystem?.panel_model),
+    panel_quantity: cleanValue(solarSystem?.panel_quantity),
+
+    inverter_brand: cleanValue(solarSystem?.inverter_brand),
+    inverter_model: cleanValue(solarSystem?.inverter_model),
+    inverter_capacity_kw: cleanValue(
+      solarSystem?.inverter_capacity_kw
+    ),
+
+    installation_date: cleanValue(
+      solarSystem?.installation_date
+    ),
+
+    installer_technician_id: cleanValue(
+      solarSystem?.installer_technician_id
+    ),
+
+    panel_warranty_years: cleanValue(
+      solarSystem?.panel_warranty_years
+    ),
+
+    inverter_warranty_years: cleanValue(
+      solarSystem?.inverter_warranty_years
+    ),
+
+    net_metering_status:
+      cleanValue(solarSystem?.net_metering_status) || "PENDING",
+
+    subsidy_status:
+      cleanValue(solarSystem?.subsidy_status) || "NOT_APPLIED",
+
+    system_status:
+      cleanValue(solarSystem?.system_status) || "ACTIVE",
+
+    notes: cleanValue(solarSystem?.notes),
   });
 
   useEffect(() => {
-    if (!solarSystem) {
-      setForm({
-        systemCapacityKw: "",
-        panelBrand: "",
-        panelModel: "",
-        panelQuantity: "",
-        inverterBrand: "",
-        inverterModel: "",
-        inverterCapacityKw: "",
-        installationDate: "",
-        installerTechnicianId: "",
-        panelWarrantyYears: "25",
-        inverterWarrantyYears: "5",
-        netMeteringStatus: "PENDING",
-        subsidyStatus: "NOT_APPLIED",
-        systemStatus: "ACTIVE",
-        notes: "",
-      });
-
-      return;
-    }
-
-    setForm({
-      systemCapacityKw: String(
-        solarSystem.system_capacity_kw ?? ""
-      ),
-
-      panelBrand: solarSystem.panel_brand ?? "",
-
-      panelModel: solarSystem.panel_model ?? "",
-
-      panelQuantity:
-        solarSystem.panel_quantity != null
-          ? String(solarSystem.panel_quantity)
-          : "",
-
-      inverterBrand: solarSystem.inverter_brand ?? "",
-
-      inverterModel: solarSystem.inverter_model ?? "",
-
-      inverterCapacityKw:
-        solarSystem.inverter_capacity_kw != null
-          ? String(solarSystem.inverter_capacity_kw)
-          : "",
-
-      installationDate: solarSystem.installation_date
-        ? solarSystem.installation_date.substring(0, 10)
-        : "",
-
-      installerTechnicianId:
-        solarSystem.installer_technician_id != null
-          ? String(solarSystem.installer_technician_id)
-          : "",
-
-      panelWarrantyYears:
-        solarSystem.panel_warranty_years != null
-          ? String(solarSystem.panel_warranty_years)
-          : "",
-
-      inverterWarrantyYears:
-        solarSystem.inverter_warranty_years != null
-          ? String(solarSystem.inverter_warranty_years)
-          : "",
-
-      netMeteringStatus:
-        solarSystem.net_metering_status || "PENDING",
-
-      subsidyStatus:
-        solarSystem.subsidy_status || "NOT_APPLIED",
-
-      systemStatus:
-        solarSystem.system_status || "ACTIVE",
-
-      notes: solarSystem.notes ?? "",
-    });
-  }, [solarSystem]);
-
-  useEffect(() => {
-    async function loadTechnicians() {
-      setTechniciansLoading(true);
-
-      try {
-        const response = await fetch(
-          "/api/admin/technicians/active",
-          {
-            cache: "no-store",
-          }
-        );
-
-        const result = await response.json();
-
-        if (!response.ok || !result.success) {
-          throw new Error(
-            result.message ||
-              "Failed to load technicians."
-          );
-        }
-
-        setTechnicians(result.data || []);
-      } catch (error) {
-        console.error(
-          "Failed to load technicians:",
-          error
-        );
-
-        setTechnicians([]);
-      } finally {
-        setTechniciansLoading(false);
-      }
-    }
-
+    loadCustomers();
     loadTechnicians();
   }, []);
 
-  function handleChange(
-    e: React.ChangeEvent<
-      HTMLInputElement |
-        HTMLSelectElement |
-        HTMLTextAreaElement
-    >
-  ) {
-    const { name, value } = e.target;
-
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  }
-
-  async function handleSubmit(
-    e: FormEvent<HTMLFormElement>
-  ) {
-    e.preventDefault();
-
-    setLoading(true);
-    setError("");
-
+  async function loadCustomers() {
     try {
-      if (!form.systemCapacityKw) {
+      setLoadingCustomers(true);
+
+      const [customersResponse, systemsResponse] =
+        await Promise.all([
+          fetch("/api/admin/customers", {
+            method: "GET",
+            cache: "no-store",
+          }),
+
+          fetch("/api/admin/solar-systems", {
+            method: "GET",
+            cache: "no-store",
+          }),
+        ]);
+
+      const customersJson = await customersResponse.json();
+      const systemsJson = await systemsResponse.json();
+
+      if (!customersResponse.ok) {
         throw new Error(
-          "System capacity is required."
+          customersJson?.message || "Unable to load customers."
         );
       }
 
-      const payload = {
-        customerId,
+      if (!systemsResponse.ok) {
+        throw new Error(
+          systemsJson?.message ||
+            "Unable to load solar systems."
+        );
+      }
 
-        systemCapacityKw: Number(
-          form.systemCapacityKw
-        ),
+      const allCustomers: Customer[] =
+        customersJson?.data || [];
 
-        panelBrand:
-          form.panelBrand || null,
+      const allSystems: SolarSystemFormData[] =
+        systemsJson?.data || [];
 
-        panelModel:
-          form.panelModel || null,
+      /*
+       * Customer IDs जिनके Solar System already बने हुए हैं
+       */
+      const customerIdsWithSystem = new Set<number>(
+        allSystems
+          .map((system) => Number(system.customer_id))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      );
 
-        panelQuantity:
-          form.panelQuantity
-            ? Number(form.panelQuantity)
-            : null,
+      /*
+       * ADD MODE:
+       * जिस customer का Solar System already है
+       * उसे dropdown में नहीं दिखाना।
+       *
+       * EDIT MODE:
+       * जिस customer का current Solar System edit कर रहे हैं,
+       * उसे dropdown में रखना है।
+       */
+      const availableCustomers = allCustomers.filter(
+        (customer) => {
+          const id = Number(customer.id);
 
-        inverterBrand:
-          form.inverterBrand || null,
+          /*
+           * Current customer in Edit mode
+           */
+          if (
+            isEditMode &&
+            solarSystem?.customer_id !== undefined &&
+            Number(solarSystem.customer_id) === id
+          ) {
+            return true;
+          }
 
-        inverterModel:
-          form.inverterModel || null,
+          /*
+           * Customer page से customerId आया है
+           *
+           * अगर नया Solar System customer के लिए बन रहा है,
+           * तो उसे available रहने दें।
+           */
+          if (
+            !isEditMode &&
+            customerId !== undefined &&
+            customerId !== null &&
+            Number(customerId) === id
+          ) {
+            return !customerIdsWithSystem.has(id);
+          }
 
-        inverterCapacityKw:
-          form.inverterCapacityKw
-            ? Number(form.inverterCapacityKw)
-            : null,
+          /*
+           * Normal Add mode:
+           * सिर्फ बिना Solar System वाले customers
+           */
+          return !customerIdsWithSystem.has(id);
+        }
+      );
 
-        installationDate:
-          form.installationDate || null,
+      setCustomers(availableCustomers);
+    } catch (err) {
+      console.error("Load customers error:", err);
 
-        installerTechnicianId:
-          form.installerTechnicianId
-            ? Number(form.installerTechnicianId)
-            : null,
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load customers."
+      );
+    } finally {
+      setLoadingCustomers(false);
+    }
+  }
 
-        panelWarrantyYears:
-          form.panelWarrantyYears
-            ? Number(form.panelWarrantyYears)
-            : null,
+  async function loadTechnicians() {
+    try {
+      setLoadingTechnicians(true);
 
-        inverterWarrantyYears:
-          form.inverterWarrantyYears
-            ? Number(form.inverterWarrantyYears)
-            : null,
+      const response = await fetch(
+        "/api/admin/technicians?status=ACTIVE",
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
 
-        netMeteringStatus:
-          form.netMeteringStatus,
+      const json = await response.json();
 
-        subsidyStatus:
-          form.subsidyStatus,
+      if (!response.ok) {
+        throw new Error(
+          json?.message || "Unable to load technicians."
+        );
+      }
 
-        systemStatus:
-          form.systemStatus,
+      setTechnicians(json?.data || []);
+    } catch (err) {
+      console.error("Load technicians error:", err);
 
-        notes:
-          form.notes || null,
-      };
+      setError((current) =>
+        current ||
+        (err instanceof Error
+          ? err.message
+          : "Unable to load technicians.")
+      );
+    } finally {
+      setLoadingTechnicians(false);
+    }
+  }
+
+  function updateField(
+    field: keyof typeof form,
+    value: string
+  ) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+
+    if (error) {
+      setError("");
+    }
+
+    if (success) {
+      setSuccess("");
+    }
+  }
+
+  const selectedCustomer = useMemo(() => {
+    return customers.find(
+      (customer) =>
+        Number(customer.id) === Number(form.customer_id)
+    );
+  }, [customers, form.customer_id]);
+
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    setError("");
+    setSuccess("");
+
+    /*
+     * Customer validation
+     */
+    const selectedCustomerId = Number(form.customer_id);
+
+    if (
+      !Number.isInteger(selectedCustomerId) ||
+      selectedCustomerId <= 0
+    ) {
+      setError("Please select a customer.");
+      return;
+    }
+
+    /*
+     * Capacity validation
+     */
+    const capacity = Number(form.system_capacity_kw);
+
+    if (!Number.isFinite(capacity) || capacity <= 0) {
+      setError(
+        "System capacity must be greater than 0 KW."
+      );
+      return;
+    }
+
+    /*
+     * Panel quantity validation
+     */
+    let panelQuantity: number | null = null;
+
+    if (form.panel_quantity.trim() !== "") {
+      panelQuantity = Number(form.panel_quantity);
+
+      if (
+        !Number.isInteger(panelQuantity) ||
+        panelQuantity < 0
+      ) {
+        setError(
+          "Panel quantity must be a valid whole number."
+        );
+        return;
+      }
+    }
+
+    /*
+     * Inverter capacity
+     */
+    let inverterCapacity: number | null = null;
+
+    if (form.inverter_capacity_kw.trim() !== "") {
+      inverterCapacity = Number(
+        form.inverter_capacity_kw
+      );
+
+      if (
+        !Number.isFinite(inverterCapacity) ||
+        inverterCapacity <= 0
+      ) {
+        setError(
+          "Inverter capacity must be greater than 0 KW."
+        );
+        return;
+      }
+    }
+
+    /*
+     * Warranty validation
+     */
+    let panelWarranty: number | null = null;
+
+    if (form.panel_warranty_years.trim() !== "") {
+      panelWarranty = Number(
+        form.panel_warranty_years
+      );
+
+      if (
+        !Number.isFinite(panelWarranty) ||
+        panelWarranty < 0
+      ) {
+        setError(
+          "Panel warranty years cannot be negative."
+        );
+        return;
+      }
+    }
+
+    let inverterWarranty: number | null = null;
+
+    if (form.inverter_warranty_years.trim() !== "") {
+      inverterWarranty = Number(
+        form.inverter_warranty_years
+      );
+
+      if (
+        !Number.isFinite(inverterWarranty) ||
+        inverterWarranty < 0
+      ) {
+        setError(
+          "Inverter warranty years cannot be negative."
+        );
+        return;
+      }
+    }
+
+    /*
+     * Notes validation
+     */
+    if (form.notes.length > 5000) {
+      setError(
+        "Notes cannot exceed 5000 characters."
+      );
+      return;
+    }
+
+    /*
+     * Build request
+     */
+    const payload = {
+      customer_id: selectedCustomerId,
+
+      system_capacity_kw: capacity,
+
+      panel_brand:
+        form.panel_brand.trim() || null,
+
+      panel_model:
+        form.panel_model.trim() || null,
+
+      panel_quantity: panelQuantity,
+
+      inverter_brand:
+        form.inverter_brand.trim() || null,
+
+      inverter_model:
+        form.inverter_model.trim() || null,
+
+      inverter_capacity_kw: inverterCapacity,
+
+      installation_date:
+        form.installation_date || null,
+
+      installer_technician_id:
+        form.installer_technician_id
+          ? Number(form.installer_technician_id)
+          : null,
+
+      panel_warranty_years: panelWarranty,
+
+      inverter_warranty_years:
+        inverterWarranty,
+
+      net_metering_status:
+        form.net_metering_status,
+
+      subsidy_status:
+        form.subsidy_status,
+
+      system_status:
+        form.system_status,
+
+      notes:
+        form.notes.trim() || null,
+    };
+
+    try {
+      setSaving(true);
 
       const url = isEditMode
         ? `/api/admin/solar-systems/${solarSystem?.id}`
@@ -285,474 +508,598 @@ export default function SolarSystemForm({
 
       const response = await fetch(url, {
         method,
-
         headers: {
           "Content-Type": "application/json",
         },
-
         body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
+      const json = await response.json();
 
-      if (!response.ok || !result.success) {
+      if (!response.ok) {
         throw new Error(
-          result.message ||
+          json?.message ||
             (isEditMode
-              ? "Failed to update solar system."
-              : "Failed to create solar system.")
+              ? "Unable to update solar system."
+              : "Unable to create solar system.")
         );
       }
 
-      alert(
+      setSuccess(
         isEditMode
-          ? "Solar system updated successfully."
-          : "Solar system created successfully."
+          ? "Solar System updated successfully."
+          : "Solar System created successfully."
       );
 
+      /*
+       * Parent page को reload करने के लिए
+       */
       onSaved();
-      onClose();
+
+      /*
+       * थोड़ी देर बाद modal close
+       */
+      setTimeout(() => {
+        onClose();
+      }, 700);
     } catch (err) {
+      console.error(
+        "Save solar system error:",
+        err
+      );
+
       setError(
         err instanceof Error
           ? err.message
-          : "Something went wrong."
+          : "Unable to save solar system."
       );
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white shadow-xl">
-
-        {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        {/* HEADER */}
+        <div className="flex items-center justify-between border-b px-6 py-4">
           <div>
-            <h2 className="text-xl font-semibold text-slate-800">
+            <h2 className="text-lg font-semibold text-slate-900">
               {isEditMode
                 ? "Edit Solar System"
                 : "Add Solar System"}
             </h2>
 
-            <p className="text-sm text-slate-500">
+            <p className="mt-1 text-xs text-slate-500">
               {isEditMode
-                ? `Update ${
-                    solarSystem?.system_code ||
-                    "solar system"
-                  } details.`
-                : "Add solar installation details for this customer."}
+                ? "Update solar installation details."
+                : "Add customer solar installation details."}
             </p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            disabled={loading}
-            className="rounded-lg p-2 text-2xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            disabled={saving}
+            className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed"
+            aria-label="Close"
           >
-            ×
+            ✕
           </button>
         </div>
 
+        {/* BODY */}
         <form
           onSubmit={handleSubmit}
-          className="space-y-6 p-6"
+          className="min-h-0 flex-1 overflow-y-auto"
         >
-          {/* Error */}
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          {/* System Details */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              System Details
-            </h3>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Capacity (kW) *
-                </label>
-
-                <input
-                  name="systemCapacityKw"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={form.systemCapacityKw}
-                  onChange={handleChange}
-                  placeholder="3"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
+          <div className="space-y-6 p-6">
+            {/* ERROR */}
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
               </div>
+            )}
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Installation Date
-                </label>
-
-                <input
-                  name="installationDate"
-                  type="date"
-                  value={form.installationDate}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
+            {/* SUCCESS */}
+            {success && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                {success}
               </div>
+            )}
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  System Status
-                </label>
+            {/* CUSTOMER */}
+            <section>
+              <SectionTitle title="Customer" />
 
-                <select
-                  name="systemStatus"
-                  value={form.systemStatus}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="ACTIVE">
-                    Active
-                  </option>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Customer
+                    <span className="ml-1 text-red-500">
+                      *
+                    </span>
+                  </label>
 
-                  <option value="INACTIVE">
-                    Inactive
-                  </option>
-
-                  <option value="UNDER_MAINTENANCE">
-                    Under Maintenance
-                  </option>
-
-                  <option value="DECOMMISSIONED">
-                    Decommissioned
-                  </option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Solar Panel */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Solar Panel Details
-            </h3>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Panel Brand
-                </label>
-
-                <input
-                  name="panelBrand"
-                  value={form.panelBrand}
-                  onChange={handleChange}
-                  placeholder="Adani"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Panel Model
-                </label>
-
-                <input
-                  name="panelModel"
-                  value={form.panelModel}
-                  onChange={handleChange}
-                  placeholder="550W Mono PERC"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Panel Quantity
-                </label>
-
-                <input
-                  name="panelQuantity"
-                  type="number"
-                  min="1"
-                  value={form.panelQuantity}
-                  onChange={handleChange}
-                  placeholder="6"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Panel Warranty (Years)
-                </label>
-
-                <input
-                  name="panelWarrantyYears"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={form.panelWarrantyYears}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Inverter */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Inverter Details
-            </h3>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Inverter Brand
-                </label>
-
-                <input
-                  name="inverterBrand"
-                  value={form.inverterBrand}
-                  onChange={handleChange}
-                  placeholder="Luminous"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Inverter Model
-                </label>
-
-                <input
-                  name="inverterModel"
-                  value={form.inverterModel}
-                  onChange={handleChange}
-                  placeholder="3KW Solar Inverter"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Capacity (kW)
-                </label>
-
-                <input
-                  name="inverterCapacityKw"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.inverterCapacityKw}
-                  onChange={handleChange}
-                  placeholder="3"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Warranty (Years)
-                </label>
-
-                <input
-                  name="inverterWarrantyYears"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={form.inverterWarrantyYears}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Government */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Government / Metering Status
-            </h3>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Net Metering
-                </label>
-
-                <select
-                  name="netMeteringStatus"
-                  value={form.netMeteringStatus}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500"
-                >
-                  <option value="PENDING">
-                    Pending
-                  </option>
-
-                  <option value="APPLIED">
-                    Applied
-                  </option>
-
-                  <option value="APPROVED">
-                    Approved
-                  </option>
-
-                  <option value="INSTALLED">
-                    Installed
-                  </option>
-
-                  <option value="NOT_REQUIRED">
-                    Not Required
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Subsidy
-                </label>
-
-                <select
-                  name="subsidyStatus"
-                  value={form.subsidyStatus}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500"
-                >
-                  <option value="NOT_APPLIED">
-                    Not Applied
-                  </option>
-
-                  <option value="APPLIED">
-                    Applied
-                  </option>
-
-                  <option value="APPROVED">
-                    Approved
-                  </option>
-
-                  <option value="RECEIVED">
-                    Received
-                  </option>
-
-                  <option value="NOT_ELIGIBLE">
-                    Not Eligible
-                  </option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Technician */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Installation Assignment
-            </h3>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Installer Technician
-              </label>
-
-              <select
-                name="installerTechnicianId"
-                value={form.installerTechnicianId}
-                onChange={handleChange}
-                disabled={techniciansLoading}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-                <option value="">
-                  {techniciansLoading
-                    ? "Loading technicians..."
-                    : "Select Technician"}
-                </option>
-
-                {technicians.map((technician) => (
-                  <option
-                    key={technician.id}
-                    value={technician.id}
+                  <select
+                    value={form.customer_id}
+                    onChange={(e) =>
+                      updateField(
+                        "customer_id",
+                        e.target.value
+                      )
+                    }
+                    disabled={
+                      saving ||
+                      loadingCustomers ||
+                      Boolean(
+                        customerId !== undefined &&
+                          customerId !== null
+                      )
+                    }
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
                   >
-                    {technician.technician_code} -{" "}
-                    {technician.technician_name}
-                    {technician.specialization
-                      ? ` (${technician.specialization})`
-                      : ""}
-                  </option>
-                ))}
-              </select>
+                    <option value="">
+                      {loadingCustomers
+                        ? "Loading customers..."
+                        : "Select Customer"}
+                    </option>
 
-              {!techniciansLoading &&
-                technicians.length === 0 && (
-                  <p className="mt-1 text-xs text-amber-600">
-                    No active technicians available.
-                    Please add an active technician first.
-                  </p>
-                )}
+                    {customers.map((customer) => (
+                      <option
+                        key={customer.id}
+                        value={customer.id}
+                      >
+                        {customer.customer_name}
+                        {customer.customer_code
+                          ? ` (${customer.customer_code})`
+                          : ""}
+                        {customer.mobile
+                          ? ` - ${customer.mobile}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
 
-              {!techniciansLoading &&
-                technicians.length > 0 && (
-                  <p className="mt-1 text-xs text-slate-400">
-                    Only active technicians are shown.
-                  </p>
-                )}
-            </div>
+                  {!loadingCustomers &&
+                    customers.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        All available customers already
+                        have a Solar System.
+                      </p>
+                    )}
+
+                  {selectedCustomer && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Selected:{" "}
+                      {selectedCustomer.customer_name}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* SYSTEM DETAILS */}
+            <section>
+              <SectionTitle title="Solar System Details" />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <InputField
+                  label="System Capacity (KW)"
+                  required
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 5"
+                  value={form.system_capacity_kw}
+                  onChange={(value) =>
+                    updateField(
+                      "system_capacity_kw",
+                      value
+                    )
+                  }
+                />
+
+                <InputField
+                  label="Panel Brand"
+                  placeholder="e.g. Adani"
+                  value={form.panel_brand}
+                  onChange={(value) =>
+                    updateField(
+                      "panel_brand",
+                      value
+                    )
+                  }
+                />
+
+                <InputField
+                  label="Panel Model"
+                  placeholder="Panel model"
+                  value={form.panel_model}
+                  onChange={(value) =>
+                    updateField(
+                      "panel_model",
+                      value
+                    )
+                  }
+                />
+
+                <InputField
+                  label="Panel Quantity"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 10"
+                  value={form.panel_quantity}
+                  onChange={(value) =>
+                    updateField(
+                      "panel_quantity",
+                      value
+                    )
+                  }
+                />
+              </div>
+            </section>
+
+            {/* INVERTER */}
+            <section>
+              <SectionTitle title="Inverter Details" />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <InputField
+                  label="Inverter Brand"
+                  placeholder="e.g. Sungrow"
+                  value={form.inverter_brand}
+                  onChange={(value) =>
+                    updateField(
+                      "inverter_brand",
+                      value
+                    )
+                  }
+                />
+
+                <InputField
+                  label="Inverter Model"
+                  placeholder="Inverter model"
+                  value={form.inverter_model}
+                  onChange={(value) =>
+                    updateField(
+                      "inverter_model",
+                      value
+                    )
+                  }
+                />
+
+                <InputField
+                  label="Inverter Capacity (KW)"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 5"
+                  value={
+                    form.inverter_capacity_kw
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "inverter_capacity_kw",
+                      value
+                    )
+                  }
+                />
+              </div>
+            </section>
+
+            {/* INSTALLATION */}
+            <section>
+              <SectionTitle title="Installation Details" />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <InputField
+                  label="Installation Date"
+                  type="date"
+                  value={form.installation_date}
+                  onChange={(value) =>
+                    updateField(
+                      "installation_date",
+                      value
+                    )
+                  }
+                />
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Installer Technician
+                  </label>
+
+                  <select
+                    value={
+                      form.installer_technician_id
+                    }
+                    onChange={(e) =>
+                      updateField(
+                        "installer_technician_id",
+                        e.target.value
+                      )
+                    }
+                    disabled={
+                      saving ||
+                      loadingTechnicians
+                    }
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
+                  >
+                    <option value="">
+                      {loadingTechnicians
+                        ? "Loading technicians..."
+                        : "Select Technician"}
+                    </option>
+
+                    {technicians.map(
+                      (technician) => (
+                        <option
+                          key={technician.id}
+                          value={technician.id}
+                        >
+                          {
+                            technician.technician_name
+                          }
+                          {technician.technician_code
+                            ? ` (${technician.technician_code})`
+                            : ""}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            {/* WARRANTY */}
+            <section>
+              <SectionTitle title="Warranty" />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <InputField
+                  label="Panel Warranty (Years)"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="e.g. 25"
+                  value={
+                    form.panel_warranty_years
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "panel_warranty_years",
+                      value
+                    )
+                  }
+                />
+
+                <InputField
+                  label="Inverter Warranty (Years)"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="e.g. 10"
+                  value={
+                    form.inverter_warranty_years
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "inverter_warranty_years",
+                      value
+                    )
+                  }
+                />
+              </div>
+            </section>
+
+            {/* STATUS */}
+            <section>
+              <SectionTitle title="Status & Government Details" />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <SelectField
+                  label="Net Metering Status"
+                  value={
+                    form.net_metering_status
+                  }
+                  options={
+                    NET_METERING_OPTIONS
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "net_metering_status",
+                      value
+                    )
+                  }
+                />
+
+                <SelectField
+                  label="Subsidy Status"
+                  value={form.subsidy_status}
+                  options={SUBSIDY_OPTIONS}
+                  onChange={(value) =>
+                    updateField(
+                      "subsidy_status",
+                      value
+                    )
+                  }
+                />
+
+                <SelectField
+                  label="System Status"
+                  value={form.system_status}
+                  options={
+                    SYSTEM_STATUS_OPTIONS
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "system_status",
+                      value
+                    )
+                  }
+                />
+              </div>
+            </section>
+
+            {/* NOTES */}
+            <section>
+              <SectionTitle title="Notes" />
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Notes
+                </label>
+
+                <textarea
+                  value={form.notes}
+                  onChange={(e) =>
+                    updateField(
+                      "notes",
+                      e.target.value
+                    )
+                  }
+                  maxLength={5000}
+                  rows={4}
+                  placeholder="Enter any additional installation or system notes..."
+                  className="w-full resize-none rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                />
+
+                <div className="mt-1 text-right text-xs text-slate-400">
+                  {form.notes.length}/5000
+                </div>
+              </div>
+            </section>
           </div>
 
-          {/* Notes */}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Notes
-            </label>
-
-            <textarea
-              name="notes"
-              rows={3}
-              value={form.notes}
-              onChange={handleChange}
-              placeholder="Additional installation details..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500"
-            />
-          </div>
-
-          {/* Buttons */}
-          <div className="flex justify-end gap-3 border-t pt-4">
-
+          {/* FOOTER */}
+          <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t bg-white px-6 py-4">
             <button
               type="button"
               onClick={onClose}
-              disabled={loading}
-              className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              disabled={saving}
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Cancel
             </button>
 
             <button
               type="submit"
-              disabled={loading}
-              className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={
+                saving ||
+                loadingCustomers ||
+                customers.length === 0
+              }
+              className="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading
+              {saving
                 ? "Saving..."
                 : isEditMode
-                  ? "Update Solar System"
-                  : "Save Solar System"}
+                ? "Update Solar System"
+                : "Save Solar System"}
             </button>
-
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reusable Components                                                        */
+/* -------------------------------------------------------------------------- */
+
+function SectionTitle({
+  title,
+}: {
+  title: string;
+}) {
+  return (
+    <div className="mb-4 border-b border-slate-200 pb-2">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">
+        {title}
+      </h3>
+    </div>
+  );
+}
+
+function InputField({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+  required = false,
+  min,
+  step,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+  required?: boolean;
+  min?: string;
+  step?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">
+        {label}
+
+        {required && (
+          <span className="ml-1 text-red-500">
+            *
+          </span>
+        )}
+      </label>
+
+      <input
+        type={type}
+        value={value}
+        onChange={(e) =>
+          onChange(e.target.value)
+        }
+        placeholder={placeholder}
+        min={min}
+        step={step}
+        required={required}
+        className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+      />
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">
+        {label}
+      </label>
+
+      <select
+        value={value}
+        onChange={(e) =>
+          onChange(e.target.value)
+        }
+        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option.replaceAll("_", " ")}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

@@ -74,37 +74,50 @@ export default function LeadForm({
 }: LeadFormProps) {
   const isEditMode = Boolean(lead);
 
-  const [form, setForm] = useState<FormData>(initialForm);
+  const [form, setForm] =
+    useState<FormData>(initialForm);
+
   const [users, setUsers] = useState<User[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingUsers, setLoadingUsers] =
+    useState(true);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  /*
-   * Load active users
-   */
+  /* =====================================================
+     LOAD ACTIVE USERS
+  ===================================================== */
+
   useEffect(() => {
     async function loadUsers() {
       try {
         setLoadingUsers(true);
 
-        const response = await fetch("/api/admin/users", {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
+        const response = await fetch(
+          "/api/admin/users",
+          {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+          }
+        );
 
         const data = await response.json();
 
         if (!response.ok) {
           throw new Error(
-            data?.message || "Failed to load users"
+            data?.message ||
+              "Failed to load users"
           );
         }
 
         setUsers(data.data || []);
       } catch (error) {
-        console.error("Load users error:", error);
+        console.error(
+          "Load users error:",
+          error
+        );
+
         setError(
           error instanceof Error
             ? error.message
@@ -118,9 +131,10 @@ export default function LeadForm({
     loadUsers();
   }, []);
 
-  /*
-   * Populate form in Edit mode
-   */
+  /* =====================================================
+     POPULATE EDIT FORM
+  ===================================================== */
+
   useEffect(() => {
     if (!lead) {
       setForm(initialForm);
@@ -128,31 +142,61 @@ export default function LeadForm({
     }
 
     setForm({
-      customerName: lead.customer_name || "",
-      mobile: lead.mobile || "",
-      email: lead.email || "",
-      city: lead.city || "",
-      district: lead.district || "",
-      serviceType: lead.service_type || "INSTALLATION",
-      requirement: lead.requirement || "",
+      customerName:
+        lead.customer_name || "",
+
+      mobile:
+        lead.mobile || "",
+
+      email:
+        lead.email || "",
+
+      city:
+        lead.city || "",
+
+      district:
+        lead.district || "",
+
+      serviceType:
+        lead.service_type ||
+        "INSTALLATION",
+
+      requirement:
+        lead.requirement || "",
+
       estimatedCapacity:
         lead.estimated_capacity !== null &&
         lead.estimated_capacity !== undefined
-          ? String(lead.estimated_capacity)
+          ? String(
+              lead.estimated_capacity
+            )
           : "",
-      source: lead.source || "ADMIN",
-      status: lead.status || "NEW",
+
+      source:
+        lead.source || "ADMIN",
+
+      status:
+        lead.status || "NEW",
+
       assignedTo:
         lead.assigned_to !== null &&
         lead.assigned_to !== undefined
           ? String(lead.assigned_to)
           : "",
-      followUpDate: convertDateForInput(
-        lead.follow_up_date
-      ),
-      notes: lead.notes || "",
+
+      followUpDate:
+        convertDateForInput(
+          lead.follow_up_date
+        ),
+
+      notes:
+        lead.notes || "",
     });
   }, [lead]);
+
+  /* =====================================================
+     UPDATE FIELD
+  ===================================================== */
 
   function updateField(
     field: keyof FormData,
@@ -164,6 +208,10 @@ export default function LeadForm({
     }));
   }
 
+  /* =====================================================
+     SAVE LEAD
+  ===================================================== */
+
   async function handleSubmit(
     event: React.FormEvent<HTMLFormElement>
   ) {
@@ -172,27 +220,44 @@ export default function LeadForm({
     setError("");
 
     if (!form.customerName.trim()) {
-      setError("Customer name is required.");
+      setError(
+        "Customer name is required."
+      );
       return;
     }
 
     if (!form.mobile.trim()) {
-      setError("Mobile number is required.");
+      setError(
+        "Mobile number is required."
+      );
       return;
     }
 
     if (!form.serviceType) {
-      setError("Service type is required.");
+      setError(
+        "Service type is required."
+      );
       return;
     }
 
-    let estimatedCapacity: number | undefined;
+    let estimatedCapacity:
+      | number
+      | undefined;
 
-    if (form.estimatedCapacity.trim()) {
-      const capacity = Number(form.estimatedCapacity);
+    if (
+      form.estimatedCapacity.trim()
+    ) {
+      const capacity = Number(
+        form.estimatedCapacity
+      );
 
-      if (Number.isNaN(capacity) || capacity < 0) {
-        setError("Please enter a valid solar capacity.");
+      if (
+        Number.isNaN(capacity) ||
+        capacity < 0
+      ) {
+        setError(
+          "Please enter a valid solar capacity."
+        );
         return;
       }
 
@@ -203,39 +268,68 @@ export default function LeadForm({
       setSaving(true);
 
       const payload = {
-        customerName: form.customerName.trim(),
-        mobile: form.mobile.trim(),
-        email: form.email.trim(),
-        city: form.city.trim(),
-        district: form.district.trim(),
-        serviceType: form.serviceType,
-        requirement: form.requirement.trim(),
+        customerName:
+          form.customerName.trim(),
+
+        mobile:
+          form.mobile.trim(),
+
+        email:
+          form.email.trim(),
+
+        city:
+          form.city.trim(),
+
+        district:
+          form.district.trim(),
+
+        serviceType:
+          form.serviceType,
+
+        requirement:
+          form.requirement.trim(),
+
         estimatedCapacity,
-        source: form.source.trim() || "ADMIN",
-        status: form.status,
-        assignedTo: form.assignedTo
-          ? Number(form.assignedTo)
-          : null,
-        followUpDate: form.followUpDate || "",
-        notes: form.notes.trim(),
+
+        source:
+          form.source.trim() ||
+          "ADMIN",
+
+        status:
+          form.status,
+
+        assignedTo:
+          form.assignedTo
+            ? Number(form.assignedTo)
+            : null,
+
+        followUpDate:
+          form.followUpDate || "",
+
+        notes:
+          form.notes.trim(),
       };
 
       const url = isEditMode
         ? `/api/admin/leads/${lead!.id}`
         : "/api/admin/leads";
 
-      const method = isEditMode ? "PATCH" : "POST";
+      const method = isEditMode
+        ? "PATCH"
+        : "POST";
 
       const response = await fetch(url, {
         method,
         credentials: "include",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type":
+            "application/json",
         },
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -246,10 +340,19 @@ export default function LeadForm({
         );
       }
 
+      /*
+       * IMPORTANT
+       * Existing Leads page expects:
+       * onSaved()
+       * onClose()
+       */
       onSaved();
       onClose();
     } catch (error) {
-      console.error("Lead save error:", error);
+      console.error(
+        "Lead save error:",
+        error
+      );
 
       setError(
         error instanceof Error
@@ -269,7 +372,9 @@ export default function LeadForm({
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              {isEditMode ? "Edit Lead" : "Add Lead"}
+              {isEditMode
+                ? "Edit Lead"
+                : "Add Lead"}
             </h2>
 
             <p className="mt-1 text-sm text-gray-500">
@@ -406,8 +511,8 @@ export default function LeadForm({
                     Installation
                   </option>
 
-                  <option value="CLEANING">
-                    Cleaning
+                  <option value="PANEL_CLEANING">
+                    Panel Cleaning
                   </option>
 
                   <option value="REPAIR">
@@ -422,6 +527,10 @@ export default function LeadForm({
                     AMC
                   </option>
 
+                  <option value="MAINTENANCE">
+                    Maintenance
+                  </option>
+
                   <option value="OTHER">
                     Other
                   </option>
@@ -434,7 +543,9 @@ export default function LeadForm({
                   type="number"
                   min="0"
                   step="0.01"
-                  value={form.estimatedCapacity}
+                  value={
+                    form.estimatedCapacity
+                  }
                   onChange={(e) =>
                     updateField(
                       "estimatedCapacity",
@@ -552,16 +663,18 @@ export default function LeadForm({
                       key={String(user.id)}
                       value={String(user.id)}
                     >
-                      {user.full_name} — {user.role_name}
+                      {user.full_name} —{" "}
+                      {user.role_name}
                     </option>
                   ))}
                 </select>
 
-                {!loadingUsers && users.length === 0 && (
-                  <p className="mt-1.5 text-xs text-gray-500">
-                    No active users available.
-                  </p>
-                )}
+                {!loadingUsers &&
+                  users.length === 0 && (
+                    <p className="mt-1.5 text-xs text-gray-500">
+                      No active users available.
+                    </p>
+                  )}
               </Field>
 
               {/* FOLLOW UP */}
@@ -664,7 +777,9 @@ export default function LeadForm({
   );
 }
 
-/* FIELD */
+/* =====================================================
+   FIELD
+===================================================== */
 
 function Field({
   label,
@@ -692,21 +807,15 @@ function Field({
   );
 }
 
-/* DATE */
+/* =====================================================
+   DATE
+===================================================== */
 
 function convertDateForInput(
   date?: string | null
 ) {
   if (!date) return "";
 
-  /*
-   * API may return:
-   * YYYY-MM-DD
-   * or ISO timestamp.
-   *
-   * Taking first 10 characters avoids
-   * unwanted timezone conversion.
-   */
   if (date.length >= 10) {
     return date.substring(0, 10);
   }
@@ -714,7 +823,9 @@ function convertDateForInput(
   return date;
 }
 
-/* STYLES */
+/* =====================================================
+   STYLES
+===================================================== */
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-50";

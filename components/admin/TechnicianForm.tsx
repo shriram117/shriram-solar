@@ -10,6 +10,7 @@ type Technician = {
   email: string | null;
   address: string | null;
   specialization: string | null;
+  experience_years: number | null;
   joining_date: string | null;
   status: string;
 };
@@ -36,10 +37,15 @@ export default function TechnicianForm({
     email: "",
     address: "",
     specialization: "",
+    experienceYears: "",
     joiningDate: "",
     status: "ACTIVE",
   });
 
+  /*
+   * Populate form
+   * Add / Edit mode
+   */
   useEffect(() => {
     if (!technician) {
       setForm({
@@ -48,9 +54,11 @@ export default function TechnicianForm({
         email: "",
         address: "",
         specialization: "",
+        experienceYears: "",
         joiningDate: "",
         status: "ACTIVE",
       });
+
       return;
     }
 
@@ -60,13 +68,24 @@ export default function TechnicianForm({
       email: technician.email ?? "",
       address: technician.address ?? "",
       specialization: technician.specialization ?? "",
+
+      experienceYears:
+        technician.experience_years !== null &&
+        technician.experience_years !== undefined
+          ? String(technician.experience_years)
+          : "",
+
       joiningDate: technician.joining_date
         ? technician.joining_date.substring(0, 10)
         : "",
+
       status: technician.status ?? "ACTIVE",
     });
   }, [technician]);
 
+  /*
+   * Handle input changes
+   */
   function handleChange(
     e: React.ChangeEvent<
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
@@ -80,6 +99,9 @@ export default function TechnicianForm({
     }));
   }
 
+  /*
+   * Submit
+   */
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
@@ -87,22 +109,64 @@ export default function TechnicianForm({
     setError("");
 
     try {
+      /*
+       * Basic validation
+       */
+      if (!form.technicianName.trim()) {
+        throw new Error("Technician name is required.");
+      }
+
+      if (!form.mobile.trim()) {
+        throw new Error("Mobile number is required.");
+      }
+
+      /*
+       * Experience validation
+       */
+      let experienceYears: number | null = null;
+
+      if (form.experienceYears.trim()) {
+        const value = Number(form.experienceYears);
+
+        if (
+          !Number.isFinite(value) ||
+          !Number.isInteger(value) ||
+          value < 0
+        ) {
+          throw new Error(
+            "Please enter a valid experience in years."
+          );
+        }
+
+        experienceYears = value;
+      }
+
+      /*
+       * API payload
+       */
       const payload = {
         technicianName: form.technicianName.trim(),
         mobile: form.mobile.trim(),
         email: form.email.trim() || null,
         address: form.address.trim() || null,
         specialization: form.specialization.trim() || null,
+        experienceYears,
         joiningDate: form.joiningDate || null,
         status: form.status,
       };
 
+      /*
+       * API URL
+       */
       const url = isEditMode
         ? `/api/admin/technicians/${technician?.id}`
         : "/api/admin/technicians";
 
       const method = isEditMode ? "PATCH" : "POST";
 
+      /*
+       * API request
+       */
       const response = await fetch(url, {
         method,
         headers: {
@@ -122,6 +186,9 @@ export default function TechnicianForm({
         );
       }
 
+      /*
+       * Success
+       */
       alert(
         isEditMode
           ? "Technician updated successfully."
@@ -144,6 +211,7 @@ export default function TechnicianForm({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl">
+        {/* Header */}
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div>
             <h2 className="text-xl font-semibold text-slate-800">
@@ -169,14 +237,18 @@ export default function TechnicianForm({
           </button>
         </div>
 
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          {/* Error */}
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
+          {/* Main Fields */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* Technician Name */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Technician Name *
@@ -193,6 +265,7 @@ export default function TechnicianForm({
               />
             </div>
 
+            {/* Mobile */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Mobile *
@@ -209,6 +282,7 @@ export default function TechnicianForm({
               />
             </div>
 
+            {/* Email */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Email
@@ -224,6 +298,7 @@ export default function TechnicianForm({
               />
             </div>
 
+            {/* Specialization */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Specialization
@@ -239,6 +314,25 @@ export default function TechnicianForm({
               />
             </div>
 
+            {/* Experience */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Experience (Years)
+              </label>
+
+              <input
+                name="experienceYears"
+                type="number"
+                min="0"
+                step="1"
+                value={form.experienceYears}
+                onChange={handleChange}
+                placeholder="e.g. 5"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            {/* Joining Date */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Joining Date
@@ -253,6 +347,7 @@ export default function TechnicianForm({
               />
             </div>
 
+            {/* Status */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Status
@@ -270,6 +365,7 @@ export default function TechnicianForm({
             </div>
           </div>
 
+          {/* Address */}
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Address
@@ -285,6 +381,7 @@ export default function TechnicianForm({
             />
           </div>
 
+          {/* Footer */}
           <div className="flex justify-end gap-3 border-t pt-4">
             <button
               type="button"
